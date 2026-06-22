@@ -1,0 +1,75 @@
+# ============================================================
+# docker-compose.yml — Orchestration des services du projet
+# ============================================================
+# Démarre l'application ET Redis avec une seule commande :
+#     docker compose up
+# ============================================================
+
+# Version du format docker-compose (3.9 = recommandé pour les projets modernes)
+version: "3.9"
+
+services:
+
+  # ---- Service 1 : l'application FastAPI ----
+  app:
+    # Construit l'image depuis le Dockerfile à la racine du projet
+    build: .
+
+    # Nom du conteneur (optionnel, mais utile pour les logs)
+    container_name: meteo_app
+
+    # Relit les variables depuis le fichier .env (non commité, secrets réels)
+    env_file:
+      - .env
+
+    # Ouvre le port 8000 du conteneur sur le port 8000 de la machine hôte
+    # Format : "hote:conteneur"
+    ports:
+      - "8000:8000"
+
+    # L'app ne démarre qu'une fois Redis sain (healthcheck vérifié)
+    depends_on:
+      redis:
+        condition: service_healthy  # attend que Redis réponde
+
+    # Redémarre automatiquement si le conteneur plante
+    restart: unless-stopped
+
+    # Vérifie que l'application répond bien après le démarrage
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/sante')"]
+      interval: 30s   # vérifie toutes les 30 secondes
+      timeout: 10s    # échec si pas de réponse en 10 secondes
+      retries: 3      # 3 échecs consécutifs = conteneur "unhealthy"
+      start_period: 15s  # laisse 15s à l'app pour démarrer avant le premier check
+
+  # ---- Service 2 : Redis (cache) ----
+  redis:
+    # Image officielle Redis (version alpine = plus légère)
+    image: redis:7-alpine
+
+    container_name: meteo_redis
+
+    # Redémarre automatiquement si le conteneur plante
+    restart: unless-stopped
+
+    # Persiste les données Redis sur le disque de la machine hôte.
+    # Sans volume, toutes les données du cache sont perdues si Redis redémarre.
+    volumes:
+      - redis_data:/data
+
+    # Commande Redis avec sauvegarde sur disque toutes les 60s si 1 clé a changé
+    command: redis-server --save 60 1 --loglevel warning
+
+    # Vérifie que Redis répond avant que l'app ne démarre
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]   # redis-cli ping doit répondre "PONG"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ---- Volumes persistants ----
+# Déclare le volume nommé (géré par Docker, survit aux redémarrages)
+volumes:
+  redis_data:
+    driver: local   # stockage local sur la machine hôte

@@ -1,0 +1,33 @@
+# ============================================================
+# .gitignore — Fichiers à ne PAS commiter dans Git
+# ============================================================
+
+# Variables d'environnement (secrets réels, jamais dans Git !)
+.env
+
+# Cache Python (bytecode compilé, inutile dans Git)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environnement virtuel Python
+venv/
+.venv/
+env/
+
+# Cache pytest et couverture de code
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Fichiers IDE (VS Code, PyCharm...)
+.vscode/
+.idea/
+*.swp
+
+# Fichiers macOS
+.DS_Store
+
+# Logs
+*.log
