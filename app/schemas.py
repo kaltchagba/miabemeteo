@@ -13,7 +13,7 @@
 #   - Literal[] pour les énumérations simples
 # ============================================================
 
-from datetime import datetime           # Pour horodater les réponses
+from datetime import datetime, timezone  # Pour horodater les réponses
 from typing import Literal              # Pour les types à valeurs fixes (énumérations)
 
 from pydantic import (
@@ -154,7 +154,7 @@ class ResultatFournisseur(BaseModel):
 
     # Timestamp de récupération (pour savoir si les données sont fraîches)
     recupere_a: datetime = Field(
-        default_factory=datetime.utcnow,  # Rempli automatiquement à la création
+        default_factory=lambda: datetime.now(timezone.utc),  # Rempli automatiquement à la création
         description="Date/heure de récupération (UTC)",
     )
 
@@ -228,7 +228,7 @@ class MeteoResponse(BaseModel):
 
     # Horodatage de génération de la réponse
     genere_a: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Date/heure de génération de la réponse (UTC)",
     )
 
@@ -313,6 +313,6 @@ class SanteResponse(BaseModel):
 
     # Horodatage de la réponse
     verifie_a: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Date/heure de la vérification (UTC)",
     )

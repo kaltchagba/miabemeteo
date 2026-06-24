@@ -21,8 +21,6 @@
 #   6. Circuit breaker qui s'ouvre après plusieurs erreurs
 # ============================================================
 
-import json
-import pytest
 import respx                          # Mock httpx (pip install respx)
 import httpx
 

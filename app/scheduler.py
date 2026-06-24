@@ -25,7 +25,6 @@ from apscheduler.schedulers.background import BackgroundScheduler   # Thread sé
 from apscheduler.triggers.interval import IntervalTrigger           # Déclencheur périodique
 
 from app import cache                 # Pour lire les villes populaires et écrire le cache
-from app.circuit_breaker import circuit_breakers   # Pour respecter les circuits ouverts
 from app.config import (
     TOP_CITIES_COUNT,                 # Nombre de villes à pré-chauffer (défaut: 20)
     SCHEDULER_INTERVAL_MINUTES,       # Intervalle en minutes (défaut: 10)
