@@ -13,6 +13,7 @@ import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from pythonjsonlogger import jsonlogger
 
 from app import cache
 from app.circuit_breaker import circuit_breakers
@@ -21,12 +22,18 @@ from app.router_meteo import router as meteo_router
 from app.scheduler import demarrer_scheduler, arreter_scheduler
 from app.schemas import SanteResponse, EtatCircuitBreaker
 
-# ---- Configuration du logging ----
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+# ---- Configuration du logging JSON structuré ----
+# Chaque ligne de log est un objet JSON parsable par les outils de monitoring
+# (ELK, Grafana Loki, Datadog...).
+_handler = logging.StreamHandler()
+_handler.setFormatter(
+    jsonlogger.JsonFormatter(
+        fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    )
 )
+logging.root.setLevel(logging.INFO)
+logging.root.addHandler(_handler)
 logger = logging.getLogger(__name__)
 
 

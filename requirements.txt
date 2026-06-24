@@ -21,6 +21,9 @@ redis==5.0.4              # Client Python pour Redis (cache 2 niveaux)
 # --- Planificateur de tâches ---
 apscheduler==3.10.4       # Tâche de pré-chauffe toutes les 10 min
 
+# --- Logging structuré ---
+python-json-logger==2.0.7 # Formateur JSON pour les logs (contrainte transverse du sujet)
+
 # --- Tests ---
 pytest==8.2.0             # Framework de tests (ch.08 du cours)
 pytest-asyncio==0.23.6    # Support des tests async avec pytest
