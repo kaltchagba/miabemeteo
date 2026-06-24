@@ -18,7 +18,7 @@
 
 import asyncio                        # Pour exécuter les coroutines async depuis un thread
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 from apscheduler.schedulers.background import BackgroundScheduler   # Thread séparé
@@ -144,7 +144,7 @@ async def _tache_prechauffage() -> None:
     3. Pré-chauffe chaque ville SÉQUENTIELLEMENT (pas en parallèle)
        Raison : éviter de surcharger les APIs externes avec 20 requêtes simultanées
     """
-    debut = datetime.utcnow()
+    debut = datetime.now(timezone.utc)
     logger.info("=== Début pré-chauffe scheduler (%s) ===", debut.strftime("%H:%M:%S"))
 
     # ---- Récupération des villes à pré-chauffer ----
@@ -175,7 +175,7 @@ async def _tache_prechauffage() -> None:
                 logger.error("Erreur pré-chauffe %s,%s : %s", ville, pays, e)
 
     # ---- Résumé de la session ----
-    duree = (datetime.utcnow() - debut).total_seconds()
+    duree = (datetime.now(timezone.utc) - debut).total_seconds()
     logger.info(
         "=== Fin pré-chauffe : %d OK, %d KO, durée %.1fs ===",
         nb_ok, nb_ko, duree,
@@ -269,9 +269,5 @@ def forcer_prechauffage() -> None:
         logger.warning("Scheduler non démarré — impossible de forcer le pré-chauffe.")
         return
 
-    # modify_job() permet de changer la prochaine exécution
-    # On utilise plutôt run_job() pour une exécution immédiate
-    _scheduler.get_job("prechauffage_cache").modify(
-        next_run_time=datetime.utcnow()   # Exécuter maintenant
-    )
-    logger.info("Pré-chauffe forcé — exécution immédiate planifiée.")
+    _scheduler.run_job("prechauffage_cache")
+    logger.info("Pré-chauffe forcé — exécution immédiate déclenchée.")

@@ -7,7 +7,7 @@
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 
 from fastapi import FastAPI
@@ -58,10 +58,9 @@ async def lifespan(app: FastAPI):
     arreter_scheduler()
 
     # Fermeture propre du client httpx partagé
-    from app.router_meteo import _http_client
-    if _http_client and not _http_client.is_closed:
-        await _http_client.aclose()
-        logger.info("Client HTTP fermé proprement.")
+    from app.router_meteo import fermer_client_http
+    await fermer_client_http()
+    logger.info("Client HTTP fermé proprement.")
 
 
 # ============================================================
@@ -106,7 +105,7 @@ def sante() -> SanteResponse:
         dernier_succes_dt = None
         if cb.dernier_succes is not None:
             secondes = time.monotonic() - cb.dernier_succes
-            dernier_succes_dt = datetime.utcnow() - timedelta(seconds=secondes)
+            dernier_succes_dt = datetime.now(timezone.utc) - timedelta(seconds=secondes)
 
         etats_cb.append(EtatCircuitBreaker(
             fournisseur=provider_id,
@@ -127,7 +126,7 @@ def sante() -> SanteResponse:
         fournisseurs=etats_cb,
         cache_hits=stats["hits"],
         cache_misses=stats["misses"],
-        verifie_a=datetime.utcnow(),
+        verifie_a=datetime.now(timezone.utc),
     )
 
 
@@ -216,7 +215,7 @@ def dashboard() -> HTMLResponse:
   {cb_html}
 
   <p class="note">
-    Généré le {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
+    Généré le {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC
     · Scheduler actif — pré-chauffe des villes populaires toutes les 10 min
   </p>
 </body>
