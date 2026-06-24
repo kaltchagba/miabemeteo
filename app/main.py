@@ -11,10 +11,12 @@ from datetime import datetime, timedelta, timezone
 import time
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
 from app import cache
 from app.circuit_breaker import circuit_breakers
+from app.config import CORS_ORIGINS
 from app.router_meteo import router as meteo_router
 from app.scheduler import demarrer_scheduler, arreter_scheduler
 from app.schemas import SanteResponse, EtatCircuitBreaker
@@ -78,6 +80,16 @@ app = FastAPI(
     ),
     version="1.0.0",
     lifespan=lifespan,
+)
+
+# ---- Middleware CORS ----
+# Autorise les navigateurs à interroger l'API depuis d'autres origines.
+# CORS_ORIGINS est configurable via la variable d'environnement du même nom.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS.split(","),
+    allow_methods=["GET"],
+    allow_headers=["*"],
 )
 
 # ---- Montage des routers ----
