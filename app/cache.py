@@ -28,6 +28,8 @@ import logging  # Pour journaliser les erreurs Redis sans crasher
 
 import redis  # Client Redis (sync, suffisant pour nos besoins)
 
+from app.metrics import OPERATIONS_CACHE
+
 from app.config import (
     CACHE_COURT_TTL,  # 300 secondes = 5 minutes
     CACHE_LONG_TTL,  # 3600 secondes = 1 heure
@@ -362,6 +364,7 @@ def enregistrer_hit() -> None:
     Incrémente le compteur de cache hits.
     Appelé quand une réponse est servie depuis le cache long.
     """
+    OPERATIONS_CACHE.labels(niveau="l2", operation="hit").inc()
     if not _redis_disponible():
         return
     try:
@@ -375,6 +378,7 @@ def enregistrer_miss() -> None:
     Incrémente le compteur de cache misses.
     Appelé quand une réponse nécessite des appels aux fournisseurs.
     """
+    OPERATIONS_CACHE.labels(niveau="l2", operation="miss").inc()
     if not _redis_disponible():
         return
     try:

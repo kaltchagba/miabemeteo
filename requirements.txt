@@ -24,6 +24,10 @@ apscheduler==3.10.4       # Tâche de pré-chauffe toutes les 10 min
 # --- Logging structuré ---
 python-json-logger==2.0.7 # Formateur JSON pour les logs (contrainte transverse du sujet)
 
+# --- Monitoring Prometheus ---
+prometheus-fastapi-instrumentator==6.1.0  # Métriques HTTP automatiques + endpoint /metrics
+prometheus-client==0.20.0                 # Compteurs, histogrammes et jauges custom
+
 # --- Tests ---
 pytest==8.2.0             # Framework de tests (ch.08 du cours)
 pytest-asyncio==0.23.6    # Support des tests async avec pytest
