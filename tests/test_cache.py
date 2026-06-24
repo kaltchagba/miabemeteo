@@ -2,8 +2,6 @@
 # tests/test_cache.py — Tests unitaires du module cache Redis
 # ============================================================
 
-import json
-
 import fakeredis
 import pytest
 
