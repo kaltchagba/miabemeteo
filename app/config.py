@@ -102,3 +102,14 @@ TOP_CITIES_COUNT: int = int(os.environ.get("TOP_CITIES_COUNT", "20"))
 SCHEDULER_INTERVAL_MINUTES: int = int(
     os.environ.get("SCHEDULER_INTERVAL_MINUTES", "10")
 )
+
+
+# ============================================================
+# CONFIGURATION CORS
+# ============================================================
+
+# Origines autorisées à interroger l'API depuis un navigateur.
+# Plusieurs origines séparées par une virgule.
+# Exemple : http://localhost:3000,https://mon-app.fr
+# La valeur "*" autorise toutes les origines (déconseillé en production).
+CORS_ORIGINS: str = os.environ.get("CORS_ORIGINS", "*")
