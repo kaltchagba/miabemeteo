@@ -66,6 +66,13 @@ async def get_http_client() -> httpx.AsyncClient:
     return _http_client
 
 
+async def fermer_client_http() -> None:
+    """Ferme proprement le client httpx partagé lors du shutdown de l'application."""
+    global _http_client
+    if _http_client is not None and not _http_client.is_closed:
+        await _http_client.aclose()
+
+
 # ============================================================
 # SERVICE CACHE — abstraction injectable
 # ============================================================
