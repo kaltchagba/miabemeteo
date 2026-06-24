@@ -19,7 +19,7 @@ import logging
 from collections import Counter  # Pour le vote majoritaire sur les descriptions
 
 import httpx  # Client HTTP async partagé
-from fastapi import APIRouter, HTTPException, Query  # FastAPI (ch.05)
+from fastapi import APIRouter, Depends, HTTPException, Query  # FastAPI (ch.05)
 
 from app import cache  # Module cache Redis (étape 5)
 from app.circuit_breaker import circuit_breakers  # Registre des CB (étape 4)
@@ -67,6 +67,43 @@ async def get_http_client() -> httpx.AsyncClient:
 
 
 # ============================================================
+# SERVICE CACHE — abstraction injectable
+# ============================================================
+
+class ServiceCache:
+    """Façade sur le module cache, injectable via Depends()."""
+
+    def lire_cache_long(self, ville: str, pays: str):
+        return cache.lire_cache_long(ville, pays)
+
+    def ecrire_cache_long(self, reponse, ville: str, pays: str) -> None:
+        cache.ecrire_cache_long(reponse, ville, pays)
+
+    def lire_cache_court(self, fournisseur: str, ville: str, pays: str):
+        return cache.lire_cache_court(fournisseur, ville, pays)
+
+    def ecrire_cache_court(self, resultat, ville: str, pays: str) -> None:
+        cache.ecrire_cache_court(resultat, ville, pays)
+
+    def incrementer_compteur(self, ville: str, pays: str) -> None:
+        cache.incrementer_compteur(ville, pays)
+
+    def enregistrer_hit(self) -> None:
+        cache.enregistrer_hit()
+
+    def enregistrer_miss(self) -> None:
+        cache.enregistrer_miss()
+
+    def obtenir_stats(self) -> dict:
+        return cache.obtenir_stats()
+
+
+def get_service_cache() -> ServiceCache:
+    """Dépendance FastAPI — retourne l'instance du service cache."""
+    return ServiceCache()
+
+
+# ============================================================
 # FONCTIONS INTERNES D'ORCHESTRATION
 # ============================================================
 
@@ -76,6 +113,7 @@ async def _appeler_provider(
     fetch_fn,
     ville: str,
     pays: str,
+    cache_svc: ServiceCache,
 ) -> ResultatFournisseur | Exception:
     """
     Appelle UN fournisseur avec son circuit breaker.
@@ -90,7 +128,7 @@ async def _appeler_provider(
     """
 
     # ---- Étape 1 : vérifier le cache court ----
-    en_cache = cache.lire_cache_court(provider_id, ville, pays)
+    en_cache = cache_svc.lire_cache_court(provider_id, ville, pays)
     if en_cache is not None:
         # Les données brutes de ce provider sont déjà en cache
         logger.debug("Cache court HIT pour %s / %s,%s", provider_id, ville, pays)
@@ -122,7 +160,7 @@ async def _appeler_provider(
         )
 
         # Écrire dans le cache court (TTL 5 min) pour les prochaines requêtes
-        cache.ecrire_cache_court(resultat, ville, pays)
+        cache_svc.ecrire_cache_court(resultat, ville, pays)
 
         return resultat
 
@@ -256,6 +294,8 @@ async def get_meteo(
         description="Code pays ISO 3166-1 alpha-2 (ex: FR, TG, US)",
         examples=["FR"],
     ),
+    cache_svc: ServiceCache = Depends(get_service_cache),
+    client: httpx.AsyncClient = Depends(get_http_client),
 ) -> MeteoResponse:
     """
     Endpoint principal de l'agrégateur météo.
@@ -277,25 +317,23 @@ async def get_meteo(
 
     # ---- Étape 2 : Compteur de popularité ----
     # Permet au scheduler de savoir quelles villes pré-chauffer (étape 7)
-    cache.incrementer_compteur(ville, pays)
+    cache_svc.incrementer_compteur(ville, pays)
 
     # ---- Étape 3 : Vérification du cache long ----
     # Si la réponse consolidée est en cache (< 1h), on la retourne directement
-    en_cache_long = cache.lire_cache_long(ville, pays)
+    en_cache_long = cache_svc.lire_cache_long(ville, pays)
     if en_cache_long is not None:
         logger.info("Cache long HIT pour %s,%s", ville, pays)
-        cache.enregistrer_hit()          # Métriques dashboard
+        cache_svc.enregistrer_hit()      # Métriques dashboard
         return en_cache_long             # Réponse en quelques millisecondes
 
     # Cache miss → on va chercher les données fraîches
-    cache.enregistrer_miss()
+    cache_svc.enregistrer_miss()
 
     # ---- Étape 4 : Appels parallèles aux 3 providers ----
     # On crée la liste des coroutines SANS les exécuter encore
-    client = await get_http_client()
-
     coroutines = [
-        _appeler_provider(client, provider_id, fetch_fn, ville, pays)
+        _appeler_provider(client, provider_id, fetch_fn, ville, pays, cache_svc)
         for provider_id, fetch_fn in PROVIDERS
     ]
 
@@ -333,7 +371,7 @@ async def get_meteo(
 
     # Écriture dans le cache long (TTL 1 heure)
     # Les prochaines requêtes pour cette ville seront servies depuis le cache
-    cache.ecrire_cache_long(reponse, ville, pays)
+    cache_svc.ecrire_cache_long(reponse, ville, pays)
 
     # ---- Étape 8 : Retour de la réponse ----
     return reponse

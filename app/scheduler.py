@@ -32,7 +32,12 @@ from app.config import (
     PROVIDER_TIMEOUT,
 )
 from app.providers import openweather, open_meteo, weatherapi
-from app.router_meteo import _appeler_provider, _fusionner_resultats, _construire_reponse
+from app.router_meteo import (
+    ServiceCache,
+    _appeler_provider,
+    _fusionner_resultats,
+    _construire_reponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +103,9 @@ async def _prechauffer_ville(
     logger.info("Pré-chauffe en cours : %s,%s", ville, pays)
 
     # Appels parallèles aux 3 providers (même logique que router_meteo.py)
+    cache_svc = ServiceCache()
     coroutines = [
-        _appeler_provider(client, provider_id, fetch_fn, ville, pays)
+        _appeler_provider(client, provider_id, fetch_fn, ville, pays, cache_svc)
         for provider_id, fetch_fn in PROVIDERS_MAP
     ]
 
