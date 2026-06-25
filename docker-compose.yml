@@ -68,8 +68,49 @@ services:
       timeout: 5s
       retries: 5
 
+  # ---- Service 3 : Prometheus (collecte des métriques) ----
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: meteo_prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - app
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+
+  # ---- Service 4 : Grafana (visualisation des métriques) ----
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: meteo_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-meteo2026}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_SERVER_ENABLE_GZIP=true
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
 # ---- Volumes persistants ----
-# Déclare le volume nommé (géré par Docker, survit aux redémarrages)
 volumes:
   redis_data:
-    driver: local   # stockage local sur la machine hôte
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local

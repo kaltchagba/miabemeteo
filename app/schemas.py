@@ -232,6 +232,21 @@ class MeteoResponse(BaseModel):
         description="Date/heure de génération de la réponse (UTC)",
     )
 
+    # Indice de convergence inter-sources (0 = sources divergentes, 100 = accord parfait)
+    # Calculé à partir de l'écart-type des températures entre fournisseurs.
+    # Avec 1 seule source disponible, vaut 50 (confiance neutre — pas de comparaison possible).
+    indice_confiance: int = Field(
+        default=100,
+        ge=0,
+        le=100,
+        description="Indice de confiance 0-100 basé sur la convergence des fournisseurs",
+    )
+
+    avertissement: str | None = Field(
+        default=None,
+        description="Message d'alerte si les données sont potentiellement incohérentes",
+    )
+
     # ---- Validation transverse (model_validator, ch.06) ----
     @model_validator(mode="after")
     def verifier_coherence_sources(self):
@@ -247,6 +262,46 @@ class MeteoResponse(BaseModel):
                 f"len(fournisseurs_ok)={len(self.fournisseurs_ok)}"
             )
         return self  # Obligatoire en mode 'after' : retourner l'instance
+
+
+# ============================================================
+# SCHÉMAS DE L'ENDPOINT /comparer
+# ============================================================
+
+class DonneesComparaison(BaseModel):
+    """Données brutes d'un fournisseur pour la comparaison inter-sources."""
+    temperature_c: float
+    humidite_pct: float
+    vent_kmh: float
+    description: str
+    depuis_cache: bool
+
+
+class ComparaisonResponse(BaseModel):
+    """
+    Réponse de GET /comparer.
+    Expose les données brutes de chaque fournisseur côte à côte
+    avec les écarts de mesure et un indice de consensus global.
+    """
+    ville: str
+    pays: str
+    sources: dict[str, DonneesComparaison] = Field(
+        default_factory=dict,
+        description="Données brutes par fournisseur",
+    )
+    ecarts: dict[str, float] = Field(
+        default_factory=dict,
+        description="Écart max entre fournisseurs par métrique (ex: temperature_c → 1.5)",
+    )
+    indice_consensus: int = Field(
+        ..., ge=0, le=100,
+        description="Accord entre fournisseurs : 100 = accord parfait, 0 = forte divergence",
+    )
+    fournisseurs_ok: list[str] = Field(default_factory=list)
+    fournisseurs_ko: list[str] = Field(default_factory=list)
+    genere_a: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+    )
 
 
 # ============================================================

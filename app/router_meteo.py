@@ -16,16 +16,23 @@
 
 import asyncio  # Pour gather() (ch.06)
 import logging
+import statistics
+import time
 from collections import Counter  # Pour le vote majoritaire sur les descriptions
+from datetime import datetime, timezone
 
 import httpx  # Client HTTP async partagé
-from fastapi import APIRouter, Depends, HTTPException, Query  # FastAPI (ch.05)
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+
+from app.metrics import APPELS_FOURNISSEUR, LATENCE_FOURNISSEUR, maj_circuit_breaker
 
 from app import cache  # Module cache Redis (étape 5)
 from app.circuit_breaker import circuit_breakers  # Registre des CB (étape 4)
 from app.config import PROVIDER_TIMEOUT
 from app.providers import open_meteo, openweather, weatherapi  # Les 3 providers
 from app.schemas import (
+    ComparaisonResponse,
+    DonneesComparaison,
     DonneesMeteo,
     MeteoResponse,
     ResultatFournisseur,
@@ -150,14 +157,19 @@ async def _appeler_provider(
             "Circuit OPEN pour %s — requête bloquée (%s,%s)",
             provider_id, ville, pays,
         )
+        APPELS_FOURNISSEUR.labels(fournisseur=provider_id, statut="circuit_ouvert").inc()
         return RuntimeError(f"Circuit OPEN pour {provider_id}")
 
     # ---- Étape 3 : appel HTTP réel ----
+    debut = time.monotonic()
     try:
         donnees: DonneesMeteo = await fetch_fn(client, ville, pays)
 
-        # Succès → enregistrer dans le circuit breaker
+        # Succès → enregistrer dans le circuit breaker et les métriques
         cb.enregistrer_succes()
+        maj_circuit_breaker(provider_id, cb.etat.value)
+        APPELS_FOURNISSEUR.labels(fournisseur=provider_id, statut="succes").inc()
+        LATENCE_FOURNISSEUR.labels(fournisseur=provider_id).observe(time.monotonic() - debut)
 
         # Construire le ResultatFournisseur
         resultat = ResultatFournisseur(
@@ -172,9 +184,11 @@ async def _appeler_provider(
         return resultat
 
     except Exception as e:
-        # Échec → enregistrer l'erreur dans le circuit breaker
-        # (peut ouvrir le circuit si seuil atteint)
+        # Échec → enregistrer l'erreur dans le circuit breaker et les métriques
         cb.enregistrer_erreur()
+        maj_circuit_breaker(provider_id, cb.etat.value)
+        APPELS_FOURNISSEUR.labels(fournisseur=provider_id, statut="erreur").inc()
+        LATENCE_FOURNISSEUR.labels(fournisseur=provider_id).observe(time.monotonic() - debut)
         logger.error(
             "Erreur provider %s pour %s,%s : %s",
             provider_id, ville, pays, e,
@@ -213,6 +227,20 @@ def _calculer_moyenne(valeurs: list[float]) -> float:
     return round(sum(valeurs) / len(valeurs), 1)
 
 
+def _calculer_indice_confiance(succes: list[ResultatFournisseur]) -> int:
+    """
+    Indice 0-100 mesurant l'accord entre fournisseurs sur la température.
+    - 1 source : 50 (pas de comparaison possible)
+    - Écart-type = 0°C → 100
+    - Écart-type ≥ 5°C → 0
+    """
+    if len(succes) < 2:
+        return 50
+    temperatures = [r.donnees.temperature_c for r in succes]
+    ecart = statistics.stdev(temperatures)
+    return max(0, min(100, round(100 - ecart * 20)))
+
+
 def _choisir_description(descriptions: list[str]) -> str:
     """
     Choisit la description météo par VOTE MAJORITAIRE.
@@ -246,6 +274,31 @@ def _construire_reponse(
     descriptions = [r.donnees.description   for r in succes]
     ids_ok       = [r.fournisseur           for r in succes]
 
+    indice = _calculer_indice_confiance(succes)
+
+    nb_ko = len(ids_ko)
+    nb_ok = len(succes)
+    avertissement = None
+
+    if nb_ok == 1 and nb_ko >= 2:
+        avertissement = (
+            f"Un seul fournisseur a répondu sur {nb_ok + nb_ko}. "
+            f"La ville « {ville} » ({pays}) est peut-être introuvable ou mal orthographiée — "
+            f"les données retournées sont à considérer avec précaution."
+        )
+    elif nb_ok >= 2:
+        ecart_temp = max(temperatures) - min(temperatures)
+        if ecart_temp >= 8:
+            avertissement = (
+                f"Divergence importante entre fournisseurs ({ecart_temp:.1f}°C d'écart). "
+                f"Vérifiez le code pays « {pays} » — il est peut-être incorrect pour {ville}."
+            )
+        elif indice < 40:
+            avertissement = (
+                f"Faible consensus inter-sources (indice {indice}%). "
+                f"Les fournisseurs ne semblent pas interroger la même localisation."
+            )
+
     return MeteoResponse(
         ville=ville,
         pays=pays,
@@ -257,6 +310,8 @@ def _construire_reponse(
         fournisseurs_ko=ids_ko,
         nb_sources=len(succes),
         depuis_cache=False,
+        indice_confiance=indice,
+        avertissement=avertissement,
     )
 
 
@@ -272,6 +327,62 @@ PROVIDERS = [
 ]
 
 
+# ============================================================
+# HELPER INTERNE — logique métier réutilisable (HTTP + WebSocket)
+# ============================================================
+
+async def _fetch_meteo(
+    ville: str,
+    pays: str,
+    client: httpx.AsyncClient,
+    cache_svc: ServiceCache,
+) -> MeteoResponse:
+    """
+    Cœur de la logique /meteo, réutilisable sans injection FastAPI.
+    Appelé par le route handler ET le WebSocket.
+    """
+    cache_svc.incrementer_compteur(ville, pays)
+
+    en_cache_long = cache_svc.lire_cache_long(ville, pays)
+    if en_cache_long is not None:
+        logger.info("Cache long HIT pour %s,%s", ville, pays)
+        cache_svc.enregistrer_hit()
+        return en_cache_long
+
+    cache_svc.enregistrer_miss()
+
+    coroutines = [
+        _appeler_provider(client, pid, fn, ville, pays, cache_svc)
+        for pid, fn in PROVIDERS
+    ]
+    resultats: list = await asyncio.gather(*coroutines, return_exceptions=True)
+    provider_ids = [pid for pid, _ in PROVIDERS]
+    succes, ids_ko = _fusionner_resultats(resultats, provider_ids)
+
+    logger.info(
+        "Météo %s,%s — %d OK (%s), %d KO (%s)",
+        ville, pays, len(succes), [r.fournisseur for r in succes], len(ids_ko), ids_ko,
+    )
+
+    if not succes:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "erreur": "Aucun fournisseur météo disponible",
+                "fournisseurs_ko": ids_ko,
+                "suggestion": "Réessayez dans quelques secondes.",
+            },
+        )
+
+    reponse = _construire_reponse(ville, pays, succes, ids_ko)
+    cache_svc.ecrire_cache_long(reponse, ville, pays)
+    return reponse
+
+
+# ============================================================
+# ROUTE : GET /meteo
+# ============================================================
+
 @router.get(
     "/meteo",
     response_model=MeteoResponse,
@@ -282,103 +393,129 @@ PROVIDERS = [
         "Objectif : réponse en moins de 800ms (p95)."
     ),
     responses={
-        200: {"description": "Données météo fusionnées"},
+        200: {"description": "Données météo fusionnées avec indice de confiance"},
         503: {"description": "Aucun fournisseur disponible"},
     },
 )
 async def get_meteo(
-    ville: str = Query(
-        ...,                          # Obligatoire
-        min_length=1,
-        max_length=100,
-        description="Nom de la ville (ex: Paris, Lomé)",
-        examples=["Paris"],
-    ),
-    pays: str = Query(
-        default="FR",
-        min_length=2,
-        max_length=2,
-        description="Code pays ISO 3166-1 alpha-2 (ex: FR, TG, US)",
-        examples=["FR"],
-    ),
+    ville: str = Query(..., min_length=1, max_length=100,
+                       description="Nom de la ville", examples=["Paris"]),
+    pays: str = Query(default="FR", min_length=2, max_length=2,
+                      description="Code pays ISO 3166-1 alpha-2", examples=["FR"]),
     cache_svc: ServiceCache = Depends(get_service_cache),
     client: httpx.AsyncClient = Depends(get_http_client),
 ) -> MeteoResponse:
-    """
-    Endpoint principal de l'agrégateur météo.
+    return await _fetch_meteo(ville.strip(), pays.strip().upper(), client, cache_svc)
 
-    Flux d'exécution :
-    1. Normaliser les paramètres (minuscules → majuscules)
-    2. Incrémenter le compteur de popularité (pour le scheduler)
-    3. Vérifier le cache long → répondre immédiatement si hit
-    4. Appeler les 3 providers EN PARALLÈLE avec asyncio.gather()
-    5. Filtrer les succès / échecs
-    6. Lever 503 si AUCUN provider n'a répondu
-    7. Fusionner les résultats et écrire dans le cache long
-    8. Retourner la réponse
-    """
 
-    # ---- Étape 1 : Normalisation des paramètres ----
-    ville = ville.strip()        # Supprime les espaces autour du nom
-    pays  = pays.strip().upper() # Toujours en majuscules (ex: "fr" → "FR")
+# ============================================================
+# ROUTE : GET /comparer
+# ============================================================
 
-    # ---- Étape 2 : Compteur de popularité ----
-    # Permet au scheduler de savoir quelles villes pré-chauffer (étape 7)
-    cache_svc.incrementer_compteur(ville, pays)
+@router.get(
+    "/comparer",
+    response_model=ComparaisonResponse,
+    summary="Comparer les données brutes de chaque fournisseur",
+    description=(
+        "Interroge les 3 fournisseurs en parallèle et retourne leurs données brutes "
+        "côte à côte, avec les écarts de mesure et un indice de consensus. "
+        "Idéal pour comprendre pourquoi l'agrégateur a choisi certaines valeurs."
+    ),
+    tags=["Météo"],
+)
+async def comparer_sources(
+    ville: str = Query(..., min_length=1, max_length=100, examples=["Paris"]),
+    pays: str = Query(default="FR", min_length=2, max_length=2, examples=["FR"]),
+    cache_svc: ServiceCache = Depends(get_service_cache),
+    client: httpx.AsyncClient = Depends(get_http_client),
+) -> ComparaisonResponse:
+    ville = ville.strip()
+    pays = pays.strip().upper()
 
-    # ---- Étape 3 : Vérification du cache long ----
-    # Si la réponse consolidée est en cache (< 1h), on la retourne directement
-    en_cache_long = cache_svc.lire_cache_long(ville, pays)
-    if en_cache_long is not None:
-        logger.info("Cache long HIT pour %s,%s", ville, pays)
-        cache_svc.enregistrer_hit()      # Métriques dashboard
-        return en_cache_long             # Réponse en quelques millisecondes
-
-    # Cache miss → on va chercher les données fraîches
-    cache_svc.enregistrer_miss()
-
-    # ---- Étape 4 : Appels parallèles aux 3 providers ----
-    # On crée la liste des coroutines SANS les exécuter encore
     coroutines = [
-        _appeler_provider(client, provider_id, fetch_fn, ville, pays, cache_svc)
-        for provider_id, fetch_fn in PROVIDERS
+        _appeler_provider(client, pid, fn, ville, pays, cache_svc)
+        for pid, fn in PROVIDERS
     ]
-
-    # asyncio.gather() exécute TOUTES les coroutines simultanément.
-    # return_exceptions=True : une exception n'annule pas les autres.
-    # Les exceptions sont retournées dans la liste au lieu d'être levées.
-    # Ex : [ResultatFournisseur, TimeoutError, ResultatFournisseur]
     resultats: list = await asyncio.gather(*coroutines, return_exceptions=True)
-
-    # ---- Étape 5 : Séparation succès / échecs ----
     provider_ids = [pid for pid, _ in PROVIDERS]
     succes, ids_ko = _fusionner_resultats(resultats, provider_ids)
 
-    logger.info(
-        "Météo %s,%s — %d OK (%s), %d KO (%s)",
-        ville, pays,
-        len(succes), [r.fournisseur for r in succes],
-        len(ids_ko), ids_ko,
+    if not succes:
+        raise HTTPException(status_code=503, detail="Aucun fournisseur disponible")
+
+    sources = {
+        r.fournisseur: DonneesComparaison(
+            temperature_c=r.donnees.temperature_c,
+            humidite_pct=r.donnees.humidite_pct,
+            vent_kmh=r.donnees.vent_kmh,
+            description=r.donnees.description,
+            depuis_cache=r.depuis_cache,
+        )
+        for r in succes
+    }
+
+    ecarts: dict[str, float] = {}
+    if len(succes) >= 2:
+        ecarts = {
+            "temperature_c": round(
+                max(r.donnees.temperature_c for r in succes) -
+                min(r.donnees.temperature_c for r in succes), 1
+            ),
+            "humidite_pct": round(
+                max(r.donnees.humidite_pct for r in succes) -
+                min(r.donnees.humidite_pct for r in succes), 1
+            ),
+            "vent_kmh": round(
+                max(r.donnees.vent_kmh for r in succes) -
+                min(r.donnees.vent_kmh for r in succes), 1
+            ),
+        }
+
+    return ComparaisonResponse(
+        ville=ville,
+        pays=pays,
+        sources=sources,
+        ecarts=ecarts,
+        indice_consensus=_calculer_indice_confiance(succes),
+        fournisseurs_ok=[r.fournisseur for r in succes],
+        fournisseurs_ko=ids_ko,
+        genere_a=datetime.now(timezone.utc),
     )
 
-    # ---- Étape 6 : Vérification qu'au moins 1 provider a répondu ----
-    if not succes:
-        # Tous les providers ont échoué → service indisponible
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "erreur": "Aucun fournisseur météo disponible",
-                "fournisseurs_ko": ids_ko,
-                "suggestion": "Réessayez dans quelques secondes.",
-            },
-        )
 
-    # ---- Étape 7 : Fusion et mise en cache long ----
-    reponse = _construire_reponse(ville, pays, succes, ids_ko)
+# ============================================================
+# WEBSOCKET : /ws/meteo/{ville}
+# ============================================================
 
-    # Écriture dans le cache long (TTL 1 heure)
-    # Les prochaines requêtes pour cette ville seront servies depuis le cache
-    cache_svc.ecrire_cache_long(reponse, ville, pays)
+@router.websocket("/ws/meteo/{ville}")
+async def ws_meteo(
+    websocket: WebSocket,
+    ville: str,
+    pays: str = "FR",
+    interval: int = 30,
+) -> None:
+    """
+    Flux météo en temps réel via WebSocket.
+    Envoie les données toutes les `interval` secondes (min 10, max 60).
+    """
+    await websocket.accept()
+    logger.info("WebSocket ouvert — %s,%s (intervalle %ds)", ville, pays, interval)
 
-    # ---- Étape 8 : Retour de la réponse ----
-    return reponse
+    client = await get_http_client()
+    cache_svc = ServiceCache()
+    intervalle = max(10, min(60, interval))
+
+    try:
+        while True:
+            try:
+                reponse = await _fetch_meteo(
+                    ville.strip(), pays.strip().upper(), client, cache_svc
+                )
+                await websocket.send_json(reponse.model_dump(mode="json"))
+            except HTTPException as e:
+                await websocket.send_json({"erreur": str(e.detail)})
+            await asyncio.sleep(intervalle)
+    except WebSocketDisconnect:
+        logger.info("WebSocket fermé — %s,%s", ville, pays)
+    except Exception as e:
+        logger.error("Erreur WebSocket %s,%s : %s", ville, pays, e)
