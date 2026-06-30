@@ -31,3 +31,25 @@ htmlcov/
 
 # Logs
 *.log
+
+# Doc perso / soutenance (hors cahier des charges Git)
+DOCUMENTATION_SOUTENANCE.md
+GUIDE_DEMO.md
+GUIDE_DEMO_POSTMAN.md
+RECAP_LIVRABLES.md
+docs/
+
+# Outils locaux
+postman/
+
+# Livrables générés (rendus hors dépôt)
+generer_presentation.py
+generer_rapport.py
+presentation.pptx
+rapport_technique.docx
+RAPPORT PROJET 05 AGREGATEUR METEO.docx
+RAPPORT PROJET 05 AGREGATEUR METEO.pdf
+
+# Fichiers Office temporaires
+~$*
+*.tmp
