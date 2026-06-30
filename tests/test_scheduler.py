@@ -1,7 +1,3 @@
-# ============================================================
-# tests/test_scheduler.py — Tests du module scheduler
-# ============================================================
-
 import re
 
 import httpx
@@ -19,10 +15,6 @@ from app.scheduler import (
 )
 from app.schemas import MeteoResponse
 
-
-# ============================================================
-# DONNÉES DE TEST
-# ============================================================
 
 _OW_OK = {
     "main": {"temp": 22.5, "humidity": 60},
@@ -56,10 +48,6 @@ _WA_OK = {
 }
 
 
-# ============================================================
-# FIXTURE — Neutralisation de Redis
-# ============================================================
-
 @pytest.fixture
 def cache_neutre(monkeypatch):
     """Neutralise toutes les fonctions Redis pour les tests du scheduler."""
@@ -73,10 +61,6 @@ def cache_neutre(monkeypatch):
     monkeypatch.setattr(cache_module, "obtenir_stats",
                         lambda: {"hits": 0, "misses": 0, "ratio_pct": 0})
 
-
-# ============================================================
-# TESTS — _prechauffer_ville
-# ============================================================
 
 @respx.mock
 async def test_prechauffer_ville_cache_valide(monkeypatch):
@@ -93,8 +77,6 @@ async def test_prechauffer_ville_cache_valide(monkeypatch):
     async with httpx.AsyncClient() as client:
         await _prechauffer_ville(client, "Paris", "FR")
 
-    # Aucune route définie dans respx.mock : tout appel HTTP provoquerait une erreur.
-    # Si le test passe, c'est que la fonction a bien court-circuité avant les appels.
     assert len(respx.calls) == 0
 
 
@@ -144,20 +126,13 @@ async def test_prechauffer_ville_tous_providers_ko(cache_neutre, monkeypatch):
     )
 
     ecritures = []
-    monkeypatch.setattr(
-        cache_module, "ecrire_cache_long",
-        lambda *a: ecritures.append(a),
-    )
+    monkeypatch.setattr(cache_module, "ecrire_cache_long", lambda *a: ecritures.append(a))
 
     async with httpx.AsyncClient() as client:
         await _prechauffer_ville(client, "Paris", "FR")
 
     assert len(ecritures) == 0
 
-
-# ============================================================
-# TESTS — _tache_prechauffage
-# ============================================================
 
 async def test_tache_prechauffage_utilise_villes_defaut(monkeypatch):
     """Sans données Redis, la tâche préchaffe les villes de la liste par défaut."""
@@ -193,7 +168,6 @@ async def test_tache_prechauffage_utilise_villes_populaires(monkeypatch):
 
     await _tache_prechauffage()
 
-    # Les noms sont normalisés : title() pour la ville, upper() pour le pays
     assert ("Berlin", "DE") in prechaufees
     assert ("Tokyo", "JP") in prechaufees
     assert len(prechaufees) == 2
@@ -217,13 +191,8 @@ async def test_tache_prechauffage_resiliente_aux_erreurs(monkeypatch):
 
     await _tache_prechauffage()
 
-    # Paris doit avoir été préchauffé malgré l'erreur sur la première ville
     assert "Paris" in prechaufees
 
-
-# ============================================================
-# TESTS — cycle de vie du scheduler
-# ============================================================
 
 def test_demarrer_et_arreter_scheduler():
     """Le scheduler démarre (thread actif) puis s'arrête proprement."""
