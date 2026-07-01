@@ -1,0 +1,16 @@
+{
+  "name": "MiabeMETEO — Projet 05",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "forwardPorts": [8000, 3000, 9090],
+  "portsAttributes": {
+    "8000": { "label": "FastAPI", "onAutoForward": "notify" },
+    "3000": { "label": "Grafana", "onAutoForward": "notify" },
+    "9090": { "label": "Prometheus", "onAutoForward": "notify" }
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "docker compose up -d",
+  "remoteUser": "vscode"
+}
