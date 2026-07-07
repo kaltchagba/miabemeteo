@@ -93,10 +93,14 @@ class MeteoResponse(BaseModel):
 
     ville: str = Field(..., description="Nom de la ville demandée")
     pays: str = Field(..., description="Code pays (ex: FR)")
-    temperature_c: float = Field(..., description="Température moyenne des fournisseurs (°C)")
+    temperature_c: float = Field(
+        ..., description="Température moyenne des fournisseurs (°C)"
+    )
     humidite_pct: float = Field(..., description="Humidité relative moyenne (%)")
     vent_kmh: float = Field(..., description="Vitesse du vent moyenne (km/h)")
-    description: str = Field(..., description="Description choisie par vote majoritaire")
+    description: str = Field(
+        ..., description="Description choisie par vote majoritaire"
+    )
     fournisseurs_ok: list[str] = Field(default_factory=list)
     fournisseurs_ko: list[str] = Field(default_factory=list)
     nb_sources: int = Field(..., ge=1)
@@ -118,6 +122,7 @@ class MeteoResponse(BaseModel):
 
 class DonneesComparaison(BaseModel):
     """Données brutes d'un fournisseur pour la comparaison inter-sources."""
+
     temperature_c: float
     humidite_pct: float
     vent_kmh: float
@@ -127,6 +132,7 @@ class DonneesComparaison(BaseModel):
 
 class ComparaisonResponse(BaseModel):
     """Réponse de GET /comparer — données brutes côte à côte avec écarts."""
+
     ville: str
     pays: str
     sources: dict[str, DonneesComparaison] = Field(default_factory=dict)
@@ -139,6 +145,7 @@ class ComparaisonResponse(BaseModel):
 
 class EtatCircuitBreaker(BaseModel):
     """État d'un circuit breaker pour un fournisseur donné (retourné par /sante)."""
+
     fournisseur: str = Field(..., description="Nom du fournisseur météo")
     etat: Literal["CLOSED", "OPEN", "HALF_OPEN"] = Field(...)
     nb_erreurs: int = Field(default=0, ge=0)
@@ -147,6 +154,7 @@ class EtatCircuitBreaker(BaseModel):
 
 class EntreeHistorique(BaseModel):
     """Une entrée dans l'historique de températures d'une ville."""
+
     timestamp: str
     temperature_c: float
     description: str
@@ -156,6 +164,7 @@ class EntreeHistorique(BaseModel):
 
 class HistoriqueResponse(BaseModel):
     """Historique de températures d'une ville — retourné par GET /historique."""
+
     ville: str
     pays: str
     entrees: list[EntreeHistorique] = Field(default_factory=list)
@@ -168,6 +177,7 @@ class HistoriqueResponse(BaseModel):
 
 class VillePopulaire(BaseModel):
     """Une ville dans le classement de popularité."""
+
     rang: int = Field(..., ge=1)
     ville: str
     pays: str
@@ -176,6 +186,7 @@ class VillePopulaire(BaseModel):
 
 class VillesPopulairesResponse(BaseModel):
     """Classement des villes les plus consultées — GET /villes-populaires."""
+
     villes: list[VillePopulaire] = Field(default_factory=list)
     total_requetes: int = Field(default=0)
     genere_a: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -183,8 +194,11 @@ class VillesPopulairesResponse(BaseModel):
 
 class AlerteMeteo(BaseModel):
     """Une alerte météo active."""
+
     type_alerte: str = Field(..., description="canicule | gel | vent_fort")
-    niveau: str = Field(default="vigilance", description="danger | vigilance | information")
+    niveau: str = Field(
+        default="vigilance", description="danger | vigilance | information"
+    )
     ville: str
     pays: str
     valeur: float
@@ -195,6 +209,7 @@ class AlerteMeteo(BaseModel):
 
 class AlertesResponse(BaseModel):
     """Réponse de GET /alertes — liste des alertes actives."""
+
     alertes: list[AlerteMeteo] = Field(default_factory=list)
     nb_actives: int = Field(default=0)
     genere_a: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -202,6 +217,7 @@ class AlertesResponse(BaseModel):
 
 class JourPrevision(BaseModel):
     """Prévision météo pour un jour donné."""
+
     date: str
     temp_min: float
     temp_max: float
@@ -212,6 +228,7 @@ class JourPrevision(BaseModel):
 
 class PrevisionsResponse(BaseModel):
     """Prévisions 7 jours — retourné par GET /previsions."""
+
     ville: str
     pays: str
     jours: list[JourPrevision] = Field(default_factory=list)
@@ -220,6 +237,7 @@ class PrevisionsResponse(BaseModel):
 
 class VilleBatch(BaseModel):
     """Une ville dans une requête batch."""
+
     ville: str = Field(..., min_length=1, max_length=100)
     pays: str = Field(default="FR", min_length=2, max_length=2)
 
@@ -236,6 +254,7 @@ class VilleBatch(BaseModel):
 
 class BatchRequest(BaseModel):
     """Corps d'une requête POST /batch."""
+
     villes: list[VilleBatch] = Field(
         ...,
         min_length=1,
@@ -246,6 +265,7 @@ class BatchRequest(BaseModel):
 
 class ResultatBatch(BaseModel):
     """Résultat pour une ville dans une réponse batch."""
+
     ville: str
     pays: str
     succes: bool
@@ -255,6 +275,7 @@ class ResultatBatch(BaseModel):
 
 class BatchResponse(BaseModel):
     """Réponse de POST /batch."""
+
     resultats: list[ResultatBatch]
     nb_succes: int
     nb_erreurs: int
@@ -263,6 +284,7 @@ class BatchResponse(BaseModel):
 
 class SanteResponse(BaseModel):
     """Réponse de GET /sante — état global de l'application."""
+
     status: Literal["ok", "dégradé", "critique"]
     fournisseurs: list[EtatCircuitBreaker]
     cache_hits: int = Field(default=0, ge=0)

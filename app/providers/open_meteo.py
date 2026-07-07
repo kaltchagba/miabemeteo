@@ -11,10 +11,10 @@ PROVIDER_ID = "open_meteo"
 
 # Codes WMO (World Meteorological Organization) → description française
 WMO_DESCRIPTIONS: dict[int, str] = {
-    0:  "Ciel dégagé",
-    1:  "Principalement dégagé",
-    2:  "Partiellement nuageux",
-    3:  "Couvert",
+    0: "Ciel dégagé",
+    1: "Principalement dégagé",
+    2: "Partiellement nuageux",
+    3: "Couvert",
     45: "Brouillard",
     48: "Brouillard givrant",
     51: "Bruine légère",
@@ -38,13 +38,24 @@ CODE_INCONNU_DESCRIPTION = "Conditions inconnues"
 
 # Conversion codes WMO → codes OpenWeather (référence inter-providers)
 WMO_VERS_OPENWEATHER: dict[int, int] = {
-    0: 800,  1: 800,  2: 802,  3: 804,
-    45: 741, 51: 300, 61: 500, 63: 501,
-    65: 502, 71: 600, 80: 520, 95: 200,
+    0: 800,
+    1: 800,
+    2: 802,
+    3: 804,
+    45: 741,
+    51: 300,
+    61: 500,
+    63: 501,
+    65: 502,
+    71: 600,
+    80: 520,
+    95: 200,
 }
 
 
-async def _geocoder(client: httpx.AsyncClient, ville: str, pays: str) -> tuple[float, float]:
+async def _geocoder(
+    client: httpx.AsyncClient, ville: str, pays: str
+) -> tuple[float, float]:
     """Retourne (latitude, longitude) pour une ville. Lève ValueError si introuvable."""
     response = await client.get(
         f"{OPEN_METEO_GEOCODING_URL}/search",
@@ -58,17 +69,19 @@ async def _geocoder(client: httpx.AsyncClient, ville: str, pays: str) -> tuple[f
     return resultats[0]["latitude"], resultats[0]["longitude"]
 
 
-async def _get_meteo(client: httpx.AsyncClient, latitude: float, longitude: float) -> DonneesMeteo:
+async def _get_meteo(
+    client: httpx.AsyncClient, latitude: float, longitude: float
+) -> DonneesMeteo:
     """Récupère la météo actuelle (première heure) pour des coordonnées GPS."""
     response = await client.get(
         f"{OPEN_METEO_FORECAST_URL}/forecast",
         params={
-            "latitude":       latitude,
-            "longitude":      longitude,
-            "hourly":         "temperature_2m,relativehumidity_2m,windspeed_10m,weathercode",
+            "latitude": latitude,
+            "longitude": longitude,
+            "hourly": "temperature_2m,relativehumidity_2m,windspeed_10m,weathercode",
             "windspeed_unit": "kmh",
-            "forecast_days":  1,
-            "timezone":       "auto",
+            "forecast_days": 1,
+            "timezone": "auto",
         },
         timeout=PROVIDER_TIMEOUT,
     )
@@ -97,12 +110,12 @@ async def fetch_previsions(
     response = await client.get(
         f"{OPEN_METEO_FORECAST_URL}/forecast",
         params={
-            "latitude":       latitude,
-            "longitude":      longitude,
-            "daily":          "temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum",
+            "latitude": latitude,
+            "longitude": longitude,
+            "daily": "temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum",
             "windspeed_unit": "kmh",
-            "forecast_days":  nb_jours,
-            "timezone":       "auto",
+            "forecast_days": nb_jours,
+            "timezone": "auto",
         },
         timeout=PROVIDER_TIMEOUT,
     )
@@ -112,14 +125,16 @@ async def fetch_previsions(
     jours = []
     for i in range(min(nb_jours, len(daily["time"]))):
         code_wmo = daily["weathercode"][i] or 0
-        jours.append({
-            "date":             daily["time"][i],
-            "temp_min":         round(daily["temperature_2m_min"][i] or 0, 1),
-            "temp_max":         round(daily["temperature_2m_max"][i] or 0, 1),
-            "description":      WMO_DESCRIPTIONS.get(code_wmo, CODE_INCONNU_DESCRIPTION),
-            "code_meteo":       WMO_VERS_OPENWEATHER.get(code_wmo, 0),
-            "precipitation_mm": round(daily["precipitation_sum"][i] or 0, 1),
-        })
+        jours.append(
+            {
+                "date": daily["time"][i],
+                "temp_min": round(daily["temperature_2m_min"][i] or 0, 1),
+                "temp_max": round(daily["temperature_2m_max"][i] or 0, 1),
+                "description": WMO_DESCRIPTIONS.get(code_wmo, CODE_INCONNU_DESCRIPTION),
+                "code_meteo": WMO_VERS_OPENWEATHER.get(code_wmo, 0),
+                "precipitation_mm": round(daily["precipitation_sum"][i] or 0, 1),
+            }
+        )
     return jours
 
 

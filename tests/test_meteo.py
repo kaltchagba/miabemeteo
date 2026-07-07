@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 OPENWEATHER_PARIS_OK = {
     "main": {"temp": 22.5, "humidity": 60},
-    "wind": {"speed": 4.0},   # m/s → 14.4 km/h après conversion
+    "wind": {"speed": 4.0},  # m/s → 14.4 km/h après conversion
     "weather": [{"description": "ciel dégagé", "id": 800}],
 }
 
@@ -17,17 +17,17 @@ OPEN_METEO_GEOCODING_PARIS_OK = {
 
 OPEN_METEO_FORECAST_PARIS_OK = {
     "hourly": {
-        "temperature_2m":      [23.0, 22.0, 21.5],
-        "relativehumidity_2m": [58,   57,   56],
-        "windspeed_10m":       [15.0, 14.0, 13.0],
-        "weathercode":         [0,    0,    1],
+        "temperature_2m": [23.0, 22.0, 21.5],
+        "relativehumidity_2m": [58, 57, 56],
+        "windspeed_10m": [15.0, 14.0, 13.0],
+        "weathercode": [0, 0, 1],
     }
 }
 
 WEATHERAPI_PARIS_OK = {
     "location": {"name": "Paris", "country": "France"},
     "current": {
-        "temp_c":   21.8,
+        "temp_c": 21.8,
         "humidity": 62,
         "wind_kph": 13.0,
         "condition": {"text": "Ensoleillé", "code": 1000},
@@ -147,17 +147,17 @@ def test_reponses_incoherentes(client: TestClient):
 
     om_chaud = {
         "hourly": {
-            "temperature_2m":      [30.0],
+            "temperature_2m": [30.0],
             "relativehumidity_2m": [40],
-            "windspeed_10m":       [5.0],
-            "weathercode":         [0],
+            "windspeed_10m": [5.0],
+            "weathercode": [0],
         }
     }
 
     wa_moyen = {
         "location": {"name": "Paris"},
         "current": {
-            "temp_c":   20.0,
+            "temp_c": 20.0,
             "humidity": 60,
             "wind_kph": 10.0,
             "condition": {"text": "Nuageux", "code": 1006},

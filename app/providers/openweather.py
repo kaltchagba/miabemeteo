@@ -13,10 +13,10 @@ PROVIDER_ID = "openweather"
 async def fetch(client: httpx.AsyncClient, ville: str, pays: str) -> DonneesMeteo:
     """Interroge l'API OpenWeatherMap pour une ville donnée. Retourne DonneesMeteo normalisé."""
     params = {
-        "q":     f"{ville},{pays}",
+        "q": f"{ville},{pays}",
         "appid": OPENWEATHER_API_KEY,
         "units": "metric",
-        "lang":  "fr",
+        "lang": "fr",
     }
 
     response = await client.get(

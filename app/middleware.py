@@ -9,10 +9,18 @@ from app.config import RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW
 
 logger = logging.getLogger(__name__)
 
-_CHEMINS_EXCLUS = frozenset({
-    "/metrics", "/sante", "/dashboard", "/interface",
-    "/docs", "/openapi.json", "/redoc", "/",
-})
+_CHEMINS_EXCLUS = frozenset(
+    {
+        "/metrics",
+        "/sante",
+        "/dashboard",
+        "/interface",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+        "/",
+    }
+)
 
 # Swagger/ReDoc injectent des scripts inline incompatibles avec le CSP strict
 _CHEMINS_SANS_CSP = frozenset({"/docs", "/redoc", "/openapi.json"})
@@ -52,7 +60,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         if any(chemin.startswith(c) for c in _CHEMINS_EXCLUS):
             response = await call_next(request)
-            self._ajouter_headers_securite(response, skip_csp=chemin in _CHEMINS_SANS_CSP)
+            self._ajouter_headers_securite(
+                response, skip_csp=chemin in _CHEMINS_SANS_CSP
+            )
             return response
 
         ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()

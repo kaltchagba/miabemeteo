@@ -6,7 +6,14 @@ from collections import Counter
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+)
 
 from app.metrics import APPELS_FOURNISSEUR, LATENCE_FOURNISSEUR, maj_circuit_breaker
 
@@ -94,7 +101,9 @@ async def _appeler_provider(
     cb = circuit_breakers[provider_id]
     if not cb.peut_appeler():
         logger.warning("Circuit OPEN pour %s (%s,%s)", provider_id, ville, pays)
-        APPELS_FOURNISSEUR.labels(fournisseur=provider_id, statut="circuit_ouvert").inc()
+        APPELS_FOURNISSEUR.labels(
+            fournisseur=provider_id, statut="circuit_ouvert"
+        ).inc()
         return RuntimeError(f"Circuit OPEN pour {provider_id}")
 
     debut = time.monotonic()
@@ -103,9 +112,13 @@ async def _appeler_provider(
         cb.enregistrer_succes()
         maj_circuit_breaker(provider_id, cb.etat.value)
         APPELS_FOURNISSEUR.labels(fournisseur=provider_id, statut="succes").inc()
-        LATENCE_FOURNISSEUR.labels(fournisseur=provider_id).observe(time.monotonic() - debut)
+        LATENCE_FOURNISSEUR.labels(fournisseur=provider_id).observe(
+            time.monotonic() - debut
+        )
 
-        resultat = ResultatFournisseur(fournisseur=provider_id, donnees=donnees, depuis_cache=False)  # type: ignore
+        resultat = ResultatFournisseur(
+            fournisseur=provider_id, donnees=donnees, depuis_cache=False
+        )  # type: ignore
         cache_svc.ecrire_cache_court(resultat, ville, pays)
         return resultat
 
@@ -113,7 +126,9 @@ async def _appeler_provider(
         cb.enregistrer_erreur()
         maj_circuit_breaker(provider_id, cb.etat.value)
         APPELS_FOURNISSEUR.labels(fournisseur=provider_id, statut="erreur").inc()
-        LATENCE_FOURNISSEUR.labels(fournisseur=provider_id).observe(time.monotonic() - debut)
+        LATENCE_FOURNISSEUR.labels(fournisseur=provider_id).observe(
+            time.monotonic() - debut
+        )
         logger.error("Erreur provider %s pour %s,%s : %s", provider_id, ville, pays, e)
         return e
 
@@ -158,14 +173,14 @@ def _construire_reponse(
     ids_ko: list[str],
 ) -> MeteoResponse:
     temperatures = [r.donnees.temperature_c for r in succes]
-    humidites    = [r.donnees.humidite_pct  for r in succes]
-    vents        = [r.donnees.vent_kmh      for r in succes]
-    descriptions = [r.donnees.description   for r in succes]
-    ids_ok       = [r.fournisseur           for r in succes]
+    humidites = [r.donnees.humidite_pct for r in succes]
+    vents = [r.donnees.vent_kmh for r in succes]
+    descriptions = [r.donnees.description for r in succes]
+    ids_ok = [r.fournisseur for r in succes]
 
     indice = _calculer_indice_confiance(succes)
-    nb_ko  = len(ids_ko)
-    nb_ok  = len(succes)
+    nb_ko = len(ids_ko)
+    nb_ok = len(succes)
     avertissement = None
 
     if nb_ok == 1 and nb_ko >= 2:
@@ -204,8 +219,8 @@ def _construire_reponse(
 
 PROVIDERS = [
     ("openweather", openweather.fetch),
-    ("open_meteo",  open_meteo.fetch),
-    ("weatherapi",  weatherapi.fetch),
+    ("open_meteo", open_meteo.fetch),
+    ("weatherapi", weatherapi.fetch),
 ]
 
 
@@ -226,17 +241,25 @@ async def _fetch_meteo(
 
     cache_svc.enregistrer_miss()
 
-    resultats: list = await asyncio.gather(*[
-        _appeler_provider(client, pid, fn, ville, pays, cache_svc)
-        for pid, fn in PROVIDERS
-    ], return_exceptions=True)
+    resultats: list = await asyncio.gather(
+        *[
+            _appeler_provider(client, pid, fn, ville, pays, cache_svc)
+            for pid, fn in PROVIDERS
+        ],
+        return_exceptions=True,
+    )
 
     provider_ids = [pid for pid, _ in PROVIDERS]
     succes, ids_ko = _fusionner_resultats(resultats, provider_ids)
 
     logger.info(
         "Météo %s,%s — %d OK (%s), %d KO (%s)",
-        ville, pays, len(succes), [r.fournisseur for r in succes], len(ids_ko), ids_ko,
+        ville,
+        pays,
+        len(succes),
+        [r.fournisseur for r in succes],
+        len(ids_ko),
+        ids_ko,
     )
 
     if not succes:
@@ -261,23 +284,32 @@ def _verifier_alertes(ville: str, pays: str, reponse: MeteoResponse) -> None:
 
     if temp >= SEUIL_CANICULE:
         cache.enregistrer_alerte(
-            type_alerte="canicule", ville=ville, pays=pays,
-            valeur=temp, seuil=SEUIL_CANICULE,
+            type_alerte="canicule",
+            ville=ville,
+            pays=pays,
+            valeur=temp,
+            seuil=SEUIL_CANICULE,
             message=f"Température élevée : {temp}°C à {ville} ({pays}).",
             niveau="danger" if temp >= SEUIL_CANICULE + 5 else "vigilance",
         )
     elif temp <= SEUIL_GEL:
         cache.enregistrer_alerte(
-            type_alerte="gel", ville=ville, pays=pays,
-            valeur=temp, seuil=SEUIL_GEL,
+            type_alerte="gel",
+            ville=ville,
+            pays=pays,
+            valeur=temp,
+            seuil=SEUIL_GEL,
             message=f"Risque de gel : {temp}°C à {ville} ({pays}).",
             niveau="danger" if temp <= SEUIL_GEL - 5 else "vigilance",
         )
 
     if vent >= SEUIL_VENT_FORT:
         cache.enregistrer_alerte(
-            type_alerte="vent_fort", ville=ville, pays=pays,
-            valeur=vent, seuil=SEUIL_VENT_FORT,
+            type_alerte="vent_fort",
+            ville=ville,
+            pays=pays,
+            valeur=vent,
+            seuil=SEUIL_VENT_FORT,
             message=f"Vents forts : {vent} km/h à {ville} ({pays}).",
             niveau="danger" if vent >= SEUIL_VENT_FORT + 40 else "vigilance",
         )
@@ -285,9 +317,12 @@ def _verifier_alertes(ville: str, pays: str, reponse: MeteoResponse) -> None:
 
 def _post_traiter_reponse(ville: str, pays: str, reponse: MeteoResponse) -> None:
     cache.enregistrer_historique(
-        ville=ville, pays=pays,
-        temperature=reponse.temperature_c, description=reponse.description,
-        humidite=reponse.humidite_pct, vent=reponse.vent_kmh,
+        ville=ville,
+        pays=pays,
+        temperature=reponse.temperature_c,
+        description=reponse.description,
+        humidite=reponse.humidite_pct,
+        vent=reponse.vent_kmh,
     )
     cache.incrementer_score_ville(ville, pays)
     _verifier_alertes(ville, pays, reponse)
@@ -307,12 +342,22 @@ def _post_traiter_reponse(ville: str, pays: str, reponse: MeteoResponse) -> None
     },
 )
 async def get_meteo(
-    ville: str = Query(..., min_length=1, max_length=100,
-                       pattern=r"^[\w\s\-\'\.\,À-ɏ]+$",
-                       description="Nom de la ville", examples=["Paris"]),
-    pays: str = Query(default="FR", min_length=2, max_length=2,
-                      pattern=r"^[A-Za-z]{2}$",
-                      description="Code pays ISO 3166-1 alpha-2", examples=["FR"]),
+    ville: str = Query(
+        ...,
+        min_length=1,
+        max_length=100,
+        pattern=r"^[\w\s\-\'\.\,À-ɏ]+$",
+        description="Nom de la ville",
+        examples=["Paris"],
+    ),
+    pays: str = Query(
+        default="FR",
+        min_length=2,
+        max_length=2,
+        pattern=r"^[A-Za-z]{2}$",
+        description="Code pays ISO 3166-1 alpha-2",
+        examples=["FR"],
+    ),
     cache_svc: ServiceCache = Depends(get_service_cache),
     client: httpx.AsyncClient = Depends(get_http_client),
 ) -> MeteoResponse:
@@ -330,20 +375,33 @@ async def get_meteo(
     tags=["Météo"],
 )
 async def comparer_sources(
-    ville: str = Query(..., min_length=1, max_length=100,
-                       pattern=r"^[\w\s\-\'\.\,À-ɏ]+$", examples=["Paris"]),
-    pays: str = Query(default="FR", min_length=2, max_length=2,
-                      pattern=r"^[A-Za-z]{2}$", examples=["FR"]),
+    ville: str = Query(
+        ...,
+        min_length=1,
+        max_length=100,
+        pattern=r"^[\w\s\-\'\.\,À-ɏ]+$",
+        examples=["Paris"],
+    ),
+    pays: str = Query(
+        default="FR",
+        min_length=2,
+        max_length=2,
+        pattern=r"^[A-Za-z]{2}$",
+        examples=["FR"],
+    ),
     cache_svc: ServiceCache = Depends(get_service_cache),
     client: httpx.AsyncClient = Depends(get_http_client),
 ) -> ComparaisonResponse:
     ville = ville.strip()
-    pays  = pays.strip().upper()
+    pays = pays.strip().upper()
 
-    resultats: list = await asyncio.gather(*[
-        _appeler_provider(client, pid, fn, ville, pays, cache_svc)
-        for pid, fn in PROVIDERS
-    ], return_exceptions=True)
+    resultats: list = await asyncio.gather(
+        *[
+            _appeler_provider(client, pid, fn, ville, pays, cache_svc)
+            for pid, fn in PROVIDERS
+        ],
+        return_exceptions=True,
+    )
 
     provider_ids = [pid for pid, _ in PROVIDERS]
     succes, ids_ko = _fusionner_resultats(resultats, provider_ids)
@@ -366,22 +424,27 @@ async def comparer_sources(
     if len(succes) >= 2:
         ecarts = {
             "temperature_c": round(
-                max(r.donnees.temperature_c for r in succes) -
-                min(r.donnees.temperature_c for r in succes), 1
+                max(r.donnees.temperature_c for r in succes)
+                - min(r.donnees.temperature_c for r in succes),
+                1,
             ),
             "humidite_pct": round(
-                max(r.donnees.humidite_pct for r in succes) -
-                min(r.donnees.humidite_pct for r in succes), 1
+                max(r.donnees.humidite_pct for r in succes)
+                - min(r.donnees.humidite_pct for r in succes),
+                1,
             ),
             "vent_kmh": round(
-                max(r.donnees.vent_kmh for r in succes) -
-                min(r.donnees.vent_kmh for r in succes), 1
+                max(r.donnees.vent_kmh for r in succes)
+                - min(r.donnees.vent_kmh for r in succes),
+                1,
             ),
         }
 
     return ComparaisonResponse(
-        ville=ville, pays=pays,
-        sources=sources, ecarts=ecarts,
+        ville=ville,
+        pays=pays,
+        sources=sources,
+        ecarts=ecarts,
         indice_consensus=_calculer_indice_confiance(succes),
         fournisseurs_ok=[r.fournisseur for r in succes],
         fournisseurs_ko=ids_ko,
@@ -407,7 +470,9 @@ async def ws_meteo(
     try:
         while True:
             try:
-                reponse = await _fetch_meteo(ville.strip(), pays.strip().upper(), client, cache_svc)
+                reponse = await _fetch_meteo(
+                    ville.strip(), pays.strip().upper(), client, cache_svc
+                )
                 await websocket.send_json(reponse.model_dump(mode="json"))
             except HTTPException as e:
                 await websocket.send_json({"erreur": str(e.detail)})

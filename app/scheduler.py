@@ -24,32 +24,32 @@ logger = logging.getLogger(__name__)
 
 # Villes utilisées au premier démarrage (avant que Redis ait des données de popularité)
 VILLES_DEFAUT: list[tuple[str, str]] = [
-    ("Lomé",        "TG"),
-    ("Accra",       "GH"),
-    ("Abidjan",     "CI"),
-    ("Cotonou",     "BJ"),
-    ("Lagos",       "NG"),
-    ("Dakar",       "SN"),
-    ("Bamako",      "ML"),
+    ("Lomé", "TG"),
+    ("Accra", "GH"),
+    ("Abidjan", "CI"),
+    ("Cotonou", "BJ"),
+    ("Lagos", "NG"),
+    ("Dakar", "SN"),
+    ("Bamako", "ML"),
     ("Ouagadougou", "BF"),
-    ("Niamey",      "NE"),
-    ("Conakry",     "GN"),
-    ("Freetown",    "SL"),
-    ("Yaoundé",     "CM"),
-    ("Kinshasa",    "CD"),
-    ("Nairobi",     "KE"),
+    ("Niamey", "NE"),
+    ("Conakry", "GN"),
+    ("Freetown", "SL"),
+    ("Yaoundé", "CM"),
+    ("Kinshasa", "CD"),
+    ("Nairobi", "KE"),
     ("Addis-Abeba", "ET"),
-    ("Paris",       "FR"),
-    ("New York",    "US"),
-    ("Dubai",       "AE"),
-    ("Londres",     "GB"),
-    ("Le Caire",    "EG"),
+    ("Paris", "FR"),
+    ("New York", "US"),
+    ("Dubai", "AE"),
+    ("Londres", "GB"),
+    ("Le Caire", "EG"),
 ]
 
 PROVIDERS_MAP = [
     ("openweather", openweather.fetch),
-    ("open_meteo",  open_meteo.fetch),
-    ("weatherapi",  weatherapi.fetch),
+    ("open_meteo", open_meteo.fetch),
+    ("weatherapi", weatherapi.fetch),
 ]
 
 
@@ -62,15 +62,20 @@ async def _prechauffer_ville(client: httpx.AsyncClient, ville: str, pays: str) -
     logger.info("Pré-chauffe en cours : %s,%s", ville, pays)
 
     cache_svc = ServiceCache()
-    resultats = await asyncio.gather(*[
-        _appeler_provider(client, pid, fn, ville, pays, cache_svc)
-        for pid, fn in PROVIDERS_MAP
-    ], return_exceptions=True)
+    resultats = await asyncio.gather(
+        *[
+            _appeler_provider(client, pid, fn, ville, pays, cache_svc)
+            for pid, fn in PROVIDERS_MAP
+        ],
+        return_exceptions=True,
+    )
 
     succes, ids_ko = _fusionner_resultats(resultats, [pid for pid, _ in PROVIDERS_MAP])
 
     if not succes:
-        logger.warning("Pré-chauffe impossible pour %s,%s — tous KO : %s", ville, pays, ids_ko)
+        logger.warning(
+            "Pré-chauffe impossible pour %s,%s — tous KO : %s", ville, pays, ids_ko
+        )
         return
 
     reponse = _construire_reponse(ville, pays, succes, ids_ko)
@@ -126,7 +131,8 @@ def demarrer_scheduler() -> BackgroundScheduler:
     _scheduler.start()
     logger.info(
         "Scheduler démarré — pré-chauffe toutes les %d min pour %d villes",
-        SCHEDULER_INTERVAL_MINUTES, TOP_CITIES_COUNT,
+        SCHEDULER_INTERVAL_MINUTES,
+        TOP_CITIES_COUNT,
     )
     return _scheduler
 

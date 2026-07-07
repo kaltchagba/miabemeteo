@@ -35,6 +35,4 @@ _VALEUR_ETAT = {"CLOSED": 0, "HALF_OPEN": 1, "OPEN": 2}
 
 def maj_circuit_breaker(fournisseur: str, etat: str) -> None:
     """Met à jour la jauge Prometheus pour l'état d'un circuit breaker."""
-    ETAT_CIRCUIT_BREAKER.labels(fournisseur=fournisseur).set(
-        _VALEUR_ETAT.get(etat, 0)
-    )
+    ETAT_CIRCUIT_BREAKER.labels(fournisseur=fournisseur).set(_VALEUR_ETAT.get(etat, 0))

@@ -32,7 +32,9 @@ try:
     _redis.ping()
     logger.info("Connexion Redis établie : %s", REDIS_URL)
 except Exception as e:
-    logger.warning("Redis indisponible au démarrage (%s). Cache ignoré jusqu'au rétablissement.", e)
+    logger.warning(
+        "Redis indisponible au démarrage (%s). Cache ignoré jusqu'au rétablissement.", e
+    )
     _redis = None  # type: ignore
 
 
@@ -62,7 +64,9 @@ def _redis_disponible() -> bool:
     return True
 
 
-def lire_cache_court(fournisseur: str, ville: str, pays: str) -> ResultatFournisseur | None:
+def lire_cache_court(
+    fournisseur: str, ville: str, pays: str
+) -> ResultatFournisseur | None:
     """Retourne les données brutes d'un fournisseur depuis le cache L1, ou None."""
     if not _redis_disponible():
         return None
@@ -84,7 +88,9 @@ def ecrire_cache_court(resultat: ResultatFournisseur, ville: str, pays: str) -> 
         return
     cle = _cle_court(resultat.fournisseur, ville, pays)
     try:
-        _redis.set(cle, json.dumps(resultat.model_dump(mode="json")), ex=CACHE_COURT_TTL)
+        _redis.set(
+            cle, json.dumps(resultat.model_dump(mode="json")), ex=CACHE_COURT_TTL
+        )
     except Exception as e:
         logger.warning("Erreur écriture cache court [%s] : %s", cle, e)
 
@@ -205,13 +211,16 @@ def enregistrer_historique(
     cle = _cle_historique(ville, pays)
     try:
         from datetime import datetime, timezone
-        entree = json.dumps({
-            "timestamp":    datetime.now(timezone.utc).isoformat(),
-            "temperature_c": temperature,
-            "description":  description,
-            "humidite_pct": humidite,
-            "vent_kmh":     vent,
-        })
+
+        entree = json.dumps(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "temperature_c": temperature,
+                "description": description,
+                "humidite_pct": humidite,
+                "vent_kmh": vent,
+            }
+        )
         _redis.rpush(cle, entree)
         _redis.ltrim(cle, -HISTORIQUE_MAX_ENTREES, -1)
     except Exception as e:
@@ -251,12 +260,14 @@ def obtenir_top_villes_score(n: int = 10) -> list[dict]:
         for rang, (membre, score) in enumerate(resultats, 1):
             parties = membre.split(":", 1)
             if len(parties) == 2:
-                villes.append({
-                    "rang":        rang,
-                    "ville":       parties[0].capitalize(),
-                    "pays":        parties[1].upper(),
-                    "nb_requetes": int(score),
-                })
+                villes.append(
+                    {
+                        "rang": rang,
+                        "ville": parties[0].capitalize(),
+                        "pays": parties[1].upper(),
+                        "nb_requetes": int(score),
+                    }
+                )
         return villes
     except Exception as e:
         logger.warning("Erreur top villes : %s", e)
@@ -292,16 +303,19 @@ def enregistrer_alerte(
     cle = _cle_alerte(type_alerte, ville, pays)
     try:
         from datetime import datetime, timezone
-        alerte = json.dumps({
-            "type_alerte":  type_alerte,
-            "niveau":       niveau,
-            "ville":        ville,
-            "pays":         pays,
-            "valeur":       valeur,
-            "seuil":        seuil,
-            "message":      message,
-            "declenchee_a": datetime.now(timezone.utc).isoformat(),
-        })
+
+        alerte = json.dumps(
+            {
+                "type_alerte": type_alerte,
+                "niveau": niveau,
+                "ville": ville,
+                "pays": pays,
+                "valeur": valeur,
+                "seuil": seuil,
+                "message": message,
+                "declenchee_a": datetime.now(timezone.utc).isoformat(),
+            }
+        )
         _redis.set(cle, alerte, ex=TTL_ALERTE)
     except Exception as e:
         logger.warning("Erreur alerte [%s] : %s", cle, e)
@@ -347,12 +361,12 @@ def obtenir_stats() -> dict[str, int]:
     if not _redis_disponible():
         return {"hits": 0, "misses": 0, "ratio_pct": 0}
     try:
-        hits_str   = _redis.get("meteo:stats:hits")
+        hits_str = _redis.get("meteo:stats:hits")
         misses_str = _redis.get("meteo:stats:misses")
-        hits   = int(hits_str)   if hits_str   else 0
+        hits = int(hits_str) if hits_str else 0
         misses = int(misses_str) if misses_str else 0
-        total  = hits + misses
-        ratio  = round((hits / total) * 100) if total > 0 else 0
+        total = hits + misses
+        ratio = round((hits / total) * 100) if total > 0 else 0
         return {"hits": hits, "misses": misses, "ratio_pct": ratio}
     except Exception as e:
         logger.warning("Erreur stats cache : %s", e)

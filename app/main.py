@@ -48,6 +48,7 @@ async def lifespan(app: FastAPI):
     logger.info("Arrêt de l'application...")
     arreter_scheduler()
     from app.router_meteo import fermer_client_http
+
     await fermer_client_http()
     logger.info("Client HTTP fermé.")
 
@@ -116,12 +117,14 @@ def sante() -> SanteResponse:
             secondes = time.monotonic() - cb.dernier_succes
             dernier_succes_dt = datetime.now(timezone.utc) - timedelta(seconds=secondes)
 
-        etats_cb.append(EtatCircuitBreaker(
-            fournisseur=provider_id,
-            etat=cb.etat.value,
-            nb_erreurs=cb.nb_erreurs_recentes,
-            dernier_succes=dernier_succes_dt,
-        ))
+        etats_cb.append(
+            EtatCircuitBreaker(
+                fournisseur=provider_id,
+                etat=cb.etat.value,
+                nb_erreurs=cb.nb_erreurs_recentes,
+                dernier_succes=dernier_succes_dt,
+            )
+        )
         maj_circuit_breaker(provider_id, cb.etat.value)
 
     nb_open = sum(1 for cb in circuit_breakers.values() if cb.etat.value == "OPEN")
@@ -149,15 +152,17 @@ def dashboard() -> HTMLResponse:
     stats = cache.obtenir_stats()
 
     def couleur(etat: str) -> str:
-        return {"CLOSED": "#22c55e", "OPEN": "#ef4444", "HALF_OPEN": "#f59e0b"}.get(etat, "#6b7280")
+        return {"CLOSED": "#22c55e", "OPEN": "#ef4444", "HALF_OPEN": "#f59e0b"}.get(
+            etat, "#6b7280"
+        )
 
     cb_html = "".join(
         f'<div class="cb">'
         f'<span class="dot" style="background:{couleur(cb.etat.value)}"></span>'
-        f'<strong>{pid}</strong>'
+        f"<strong>{pid}</strong>"
         f'<span class="etat">{cb.etat.value}</span>'
         f'<span class="erreurs">{cb.nb_erreurs_recentes} erreur(s)</span>'
-        f'</div>'
+        f"</div>"
         for pid, cb in circuit_breakers.items()
     )
 
@@ -249,7 +254,7 @@ def interface() -> HTMLResponse:
     html = html_file.read_text(encoding="utf-8")
 
     nonce = base64.b64encode(secrets.token_bytes(18)).decode()
-    html  = html.replace("__CSP_NONCE__", nonce)
+    html = html.replace("__CSP_NONCE__", nonce)
 
     csp = (
         "default-src 'self'; "
@@ -277,4 +282,5 @@ def interface() -> HTMLResponse:
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)

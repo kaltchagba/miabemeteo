@@ -40,10 +40,10 @@ def client():
     import app.main as main_module
 
     _vrai_demarrer = main_module.demarrer_scheduler
-    _vrai_arreter  = main_module.arreter_scheduler
+    _vrai_arreter = main_module.arreter_scheduler
 
     main_module.demarrer_scheduler = lambda: None
-    main_module.arreter_scheduler  = lambda: None
+    main_module.arreter_scheduler = lambda: None
 
     app.dependency_overrides[get_service_cache] = lambda: _CacheMock()
 
@@ -52,7 +52,7 @@ def client():
 
     app.dependency_overrides.clear()
     main_module.demarrer_scheduler = _vrai_demarrer
-    main_module.arreter_scheduler  = _vrai_arreter
+    main_module.arreter_scheduler = _vrai_arreter
 
 
 @pytest.fixture(autouse=True)

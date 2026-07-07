@@ -1,45 +1,96 @@
-name: CI
+name: CI / CD — MiabeMETEO
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Déclencheurs
+#   • feat/* et fix/* → CI uniquement (lint, tests, sécurité, build)
+#   • develop         → CI + déploiement automatique sur staging
+#   • main            → CI + approbation manuelle + déploiement production
+# ─────────────────────────────────────────────────────────────────────────────
 on:
   push:
-    branches: [main, develop, kaled]
+    branches:
+      - main
+      - develop
+      - kaled
+      - "feat/**"
+      - "fix/**"
   pull_request:
-    branches: [main, develop, kaled]
+    branches:
+      - main
+      - develop
+      - kaled
+
+# Un seul pipeline actif par branche — annule les runs précédents en cours
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Variables globales
+# ─────────────────────────────────────────────────────────────────────────────
+env:
+  PYTHON_VERSION: "3.11"
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/meteo-app
 
 jobs:
 
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 1 — Lint
+  # Vérification du style et du formatage. Bloque tout le reste si erreur.
+  # Pas de cache : ruff seul s'installe en moins de 5 secondes.
+  # ───────────────────────────────────────────────────────────────────────────
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Récupérer le code
         uses: actions/checkout@v4
 
-      - name: Configurer Python 3.11
+      - name: Configurer Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Installer ruff
         run: pip install ruff==0.4.4
 
-      - name: Vérifier le style du code
+      - name: Vérifier les erreurs de style
         run: ruff check .
 
+      - name: Vérifier le formatage
+        run: ruff format --check .
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 2 — Tests
+  # Suite pytest complète avec mesure de couverture.
+  # Cache pip indexé sur le hash de requirements.txt pour éviter
+  # de retélécharger les dépendances à chaque run.
+  # Le rapport XML est conservé 7 jours comme artifact.
+  # ───────────────────────────────────────────────────────────────────────────
   tests:
     name: Tests (pytest + couverture)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: lint
 
     steps:
       - name: Récupérer le code
         uses: actions/checkout@v4
 
-      - name: Configurer Python 3.11
+      - name: Configurer Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache des dépendances pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
 
       - name: Installer les dépendances
         run: pip install -r requirements.txt
@@ -49,21 +100,218 @@ jobs:
           pytest \
             --cov=app \
             --cov-report=term-missing \
+            --cov-report=xml \
             --cov-fail-under=70 \
             -v
         env:
+          # Clés factices — respx intercepte tous les appels réseau en test
           OPENWEATHER_API_KEY: "test_key"
           WEATHERAPI_KEY: "test_key"
+          # fakeredis remplace Redis en test ; variable présente pour config.py
           REDIS_URL: "redis://localhost:6379"
 
-  docker:
-    name: Build Docker
+      - name: Publier le rapport de couverture
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ github.sha }}
+          path: coverage.xml
+          retention-days: 7
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 3 — Sécurité
+  # Scan des dépendances Python pour CVE connues via pip-audit.
+  # Tourne en parallèle avec les tests (même needs: lint) pour ne pas
+  # allonger la durée totale du pipeline.
+  # ───────────────────────────────────────────────────────────────────────────
+  securite:
+    name: Sécurité (pip-audit)
     runs-on: ubuntu-latest
-    needs: tests
+    timeout-minutes: 10
+    needs: lint
 
     steps:
       - name: Récupérer le code
         uses: actions/checkout@v4
 
+      - name: Configurer Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Installer pip-audit
+        run: pip install pip-audit
+
+      - name: Scanner les dépendances
+        run: pip-audit --requirement requirements.txt
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 4 — Build Docker
+  # Construit l'image en multi-stage, lance un conteneur de test et vérifie
+  # que GET /sante retourne 200 avant tout push vers le registry.
+  # Le push vers GHCR n'a lieu que sur develop et main.
+  # L'image est taguée avec le SHA court du commit pour la traçabilité.
+  # ───────────────────────────────────────────────────────────────────────────
+  docker-build:
+    name: Build Docker + smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [tests, securite]
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Calculer le tag de l'image
+        run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
       - name: Construire l'image Docker
-        run: docker build -t meteo-app:ci .
+        run: |
+          docker build \
+            -t ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
+            -t ${{ env.IMAGE_NAME }}:latest \
+            .
+
+      - name: Smoke test — démarrer le conteneur
+        run: |
+          docker run --rm -d \
+            --name meteo_smoke \
+            -p 8000:8000 \
+            -e OPENWEATHER_API_KEY=test_key \
+            -e WEATHERAPI_KEY=test_key \
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+
+      - name: Smoke test — vérifier GET /sante
+        run: |
+          curl --retry 8 \
+               --retry-delay 3 \
+               --retry-connrefused \
+               --fail \
+               --silent \
+               --show-error \
+               http://localhost:8000/sante
+
+      - name: Smoke test — arrêter le conteneur
+        if: always()
+        run: docker stop meteo_smoke || true
+
+      - name: Connexion au registry GHCR
+        if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Pousser l'image vers GHCR
+        if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+        run: |
+          docker push ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          docker push ${{ env.IMAGE_NAME }}:latest
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 5 — Déploiement staging
+  # Déclenché uniquement sur la branche develop après un build Docker réussi.
+  # Déploie automatiquement sur Railway (environnement staging).
+  # Vérifie le endpoint /sante après déploiement.
+  # ───────────────────────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Déploiement staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: docker-build
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Déployer sur Railway staging
+        run: railway up --service ${{ secrets.RAILWAY_SERVICE_ID }} --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Vérifier le déploiement staging
+        run: |
+          sleep 30
+          curl --retry 6 \
+               --retry-delay 5 \
+               --retry-connrefused \
+               --fail \
+               --silent \
+               --show-error \
+               ${{ vars.STAGING_URL }}/sante
+
+      - name: Résumé du déploiement
+        if: always()
+        run: |
+          echo "## Déploiement staging" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit : \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Branche : \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- URL : ${{ vars.STAGING_URL }}" >> $GITHUB_STEP_SUMMARY
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 6 — Déploiement production
+  # Déclenché uniquement sur main après un build Docker réussi.
+  # L'environment "production" impose une approbation manuelle dans GitHub
+  # avant d'exécuter les steps (Settings → Environments → production →
+  # Required reviewers).
+  # Un tag Git est créé automatiquement après déploiement réussi.
+  # ───────────────────────────────────────────────────────────────────────────
+  deploy-production:
+    name: Déploiement production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: docker-build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+        with:
+          # Token avec droit d'écriture pour créer le tag Git
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Installer Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Déployer sur Railway production
+        run: railway up --service ${{ secrets.RAILWAY_SERVICE_ID }} --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Vérifier le déploiement production
+        run: |
+          sleep 30
+          curl --retry 6 \
+               --retry-delay 5 \
+               --retry-connrefused \
+               --fail \
+               --silent \
+               --show-error \
+               ${{ vars.PRODUCTION_URL }}/sante
+
+      - name: Créer un tag de version
+        run: |
+          TAG="v$(date +'%Y%m%d-%H%M')"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Deploy production — ${{ github.sha }}"
+          git push origin "$TAG"
+
+      - name: Résumé du déploiement
+        if: always()
+        run: |
+          echo "## Déploiement production" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit : \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Branche : \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- URL : ${{ vars.PRODUCTION_URL }}" >> $GITHUB_STEP_SUMMARY

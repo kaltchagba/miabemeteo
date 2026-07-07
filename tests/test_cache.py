@@ -132,8 +132,8 @@ def test_invalider_cache_supprime_toutes_les_cles(redis_fake):
     """invalider_cache() efface le cache long et les 3 caches courts."""
     cache_module.ecrire_cache_long(_reponse(), "Paris", "FR")
     cache_module.ecrire_cache_court(_resultat("openweather"), "Paris", "FR")
-    cache_module.ecrire_cache_court(_resultat("open_meteo"),  "Paris", "FR")
-    cache_module.ecrire_cache_court(_resultat("weatherapi"),  "Paris", "FR")
+    cache_module.ecrire_cache_court(_resultat("open_meteo"), "Paris", "FR")
+    cache_module.ecrire_cache_court(_resultat("weatherapi"), "Paris", "FR")
 
     cache_module.invalider_cache("Paris", "FR")
 

@@ -1,8 +1,6 @@
 # tests/test_extras.py — Tests des endpoints complémentaires
 # /historique, /villes-populaires, /alertes, /previsions, /export, /batch, /interface
 
-import json
-
 import fakeredis
 import httpx
 import pytest
@@ -15,6 +13,7 @@ from app.config import HISTORIQUE_MAX_ENTREES
 # ============================================================
 # FIXTURE : Redis simulé pour les tests du module cache
 # ============================================================
+
 
 @pytest.fixture(autouse=True)
 def redis_mock():
@@ -31,6 +30,7 @@ def redis_mock():
 # TESTS : /historique
 # ============================================================
 
+
 def test_historique_vide(client):
     """Une ville sans historique doit retourner 404."""
     r = client.get("/historique?ville=InconnueXYZ&pays=FR")
@@ -40,9 +40,12 @@ def test_historique_vide(client):
 def test_historique_apres_enregistrement(client, redis_mock):
     """Après enregistrement d'une entrée, /historique doit la retourner."""
     cache_module.enregistrer_historique(
-        ville="Lyon", pays="FR",
-        temperature=25.0, description="Ensoleillé",
-        humidite=55.0, vent=10.0,
+        ville="Lyon",
+        pays="FR",
+        temperature=25.0,
+        description="Ensoleillé",
+        humidite=55.0,
+        vent=10.0,
     )
     r = client.get("/historique?ville=Lyon&pays=FR")
     assert r.status_code == 200
@@ -57,9 +60,12 @@ def test_historique_tendance(client, redis_mock):
     """La tendance doit être 'hausse' si la température monte."""
     for i, temp in enumerate([15.0, 16.0, 18.0, 22.0, 25.0]):
         cache_module.enregistrer_historique(
-            ville="Bordeaux", pays="FR",
-            temperature=temp, description="Nuageux",
-            humidite=60.0, vent=12.0,
+            ville="Bordeaux",
+            pays="FR",
+            temperature=temp,
+            description="Nuageux",
+            humidite=60.0,
+            vent=12.0,
         )
     r = client.get("/historique?ville=Bordeaux&pays=FR")
     assert r.status_code == 200
@@ -70,9 +76,12 @@ def test_historique_fenetre_glissante(client, redis_mock):
     """La liste ne doit jamais dépasser HISTORIQUE_MAX_ENTREES entrées."""
     for i in range(HISTORIQUE_MAX_ENTREES + 10):
         cache_module.enregistrer_historique(
-            ville="Marseille", pays="FR",
-            temperature=float(i), description="Test",
-            humidite=50.0, vent=5.0,
+            ville="Marseille",
+            pays="FR",
+            temperature=float(i),
+            description="Test",
+            humidite=50.0,
+            vent=5.0,
         )
     r = client.get(f"/historique?ville=Marseille&pays=FR&n={HISTORIQUE_MAX_ENTREES}")
     assert r.status_code == 200
@@ -82,6 +91,7 @@ def test_historique_fenetre_glissante(client, redis_mock):
 # ============================================================
 # TESTS : /villes-populaires
 # ============================================================
+
 
 def test_villes_populaires_vide(client):
     """Sans données, le classement doit être vide."""
@@ -103,7 +113,7 @@ def test_villes_populaires_avec_scores(client, redis_mock):
     d = r.json()
     assert d["total_requetes"] == 3
     assert len(d["villes"]) == 2
-    assert d["villes"][0]["ville"] == "Paris"   # Paris a 2 requêtes → rang 1
+    assert d["villes"][0]["ville"] == "Paris"  # Paris a 2 requêtes → rang 1
     assert d["villes"][0]["nb_requetes"] == 2
     assert d["villes"][1]["ville"] == "Lyon"
 
@@ -125,6 +135,7 @@ def test_villes_populaires_rang(client, redis_mock):
 # TESTS : /alertes
 # ============================================================
 
+
 def test_alertes_vide(client):
     """Sans alertes, la réponse doit être vide."""
     r = client.get("/alertes")
@@ -138,8 +149,10 @@ def test_alertes_enregistrement(client, redis_mock):
     """Une alerte enregistrée doit apparaître dans /alertes."""
     cache_module.enregistrer_alerte(
         type_alerte="canicule",
-        ville="Séville", pays="ES",
-        valeur=42.0, seuil=35.0,
+        ville="Séville",
+        pays="ES",
+        valeur=42.0,
+        seuil=35.0,
         message="Canicule sévère à Séville",
         niveau="danger",
     )
@@ -172,7 +185,9 @@ def test_alertes_multiples(client, redis_mock):
 # ============================================================
 
 OPEN_METEO_GEO_OK = {
-    "results": [{"latitude": 48.85, "longitude": 2.35, "name": "Paris", "country_code": "FR"}]
+    "results": [
+        {"latitude": 48.85, "longitude": 2.35, "name": "Paris", "country_code": "FR"}
+    ]
 }
 OPEN_METEO_FORECAST_OK = {
     "hourly": {
@@ -252,6 +267,7 @@ def test_export_format_invalide(client):
 # TESTS : /batch
 # ============================================================
 
+
 @respx.mock
 def test_batch_succes(client):
     """POST /batch avec 2 villes valides doit retourner 2 succès."""
@@ -267,7 +283,9 @@ def test_batch_succes(client):
     respx.get("https://api.weatherapi.com/v1/current.json").mock(
         return_value=httpx.Response(200, json=WEATHERAPI_OK)
     )
-    body = {"villes": [{"ville": "Paris", "pays": "FR"}, {"ville": "Lyon", "pays": "FR"}]}
+    body = {
+        "villes": [{"ville": "Paris", "pays": "FR"}, {"ville": "Lyon", "pays": "FR"}]
+    }
     r = client.post("/batch", json=body)
     assert r.status_code == 200
     d = r.json()
@@ -295,8 +313,15 @@ def test_batch_trop_de_villes(client):
 
 OPEN_METEO_DAILY_OK = {
     "daily": {
-        "time": ["2026-07-01", "2026-07-02", "2026-07-03",
-                 "2026-07-04", "2026-07-05", "2026-07-06", "2026-07-07"],
+        "time": [
+            "2026-07-01",
+            "2026-07-02",
+            "2026-07-03",
+            "2026-07-04",
+            "2026-07-05",
+            "2026-07-06",
+            "2026-07-07",
+        ],
         "temperature_2m_max": [28.0, 30.0, 27.0, 25.0, 26.0, 29.0, 31.0],
         "temperature_2m_min": [18.0, 20.0, 17.0, 16.0, 17.0, 19.0, 21.0],
         "weathercode": [0, 2, 61, 0, 1, 3, 95],
@@ -338,6 +363,7 @@ def test_previsions_ville_introuvable(client):
 # TESTS : /interface et /carte
 # ============================================================
 
+
 def test_interface_accessible(client):
     """GET /interface doit retourner du HTML MiabeMETEO avec la carte Leaflet."""
     r = client.get("/interface")
@@ -365,6 +391,7 @@ def test_carte_redirige(client):
 # ============================================================
 # TESTS : Rate limiting middleware
 # ============================================================
+
 
 def test_rate_limit_headers(client):
     """Les réponses doivent contenir les headers X-RateLimit."""

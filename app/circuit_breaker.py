@@ -12,8 +12,9 @@ from app.config import (
 
 class Etat(str, Enum):
     """Hérite de str pour être sérialisable en JSON sans conversion."""
-    CLOSED    = "CLOSED"
-    OPEN      = "OPEN"
+
+    CLOSED = "CLOSED"
+    OPEN = "OPEN"
     HALF_OPEN = "HALF_OPEN"
 
 
@@ -126,6 +127,6 @@ class CircuitBreaker:
 # En multi-workers, les états ne seraient pas partagés (voir Redis pour ce cas).
 circuit_breakers: dict[str, CircuitBreaker] = {
     "openweather": CircuitBreaker(fournisseur="openweather"),
-    "open_meteo":  CircuitBreaker(fournisseur="open_meteo"),
-    "weatherapi":  CircuitBreaker(fournisseur="weatherapi"),
+    "open_meteo": CircuitBreaker(fournisseur="open_meteo"),
+    "weatherapi": CircuitBreaker(fournisseur="weatherapi"),
 }
