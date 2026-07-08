@@ -212,6 +212,7 @@ def _construire_reponse(
         fournisseurs_ko=ids_ko,
         nb_sources=len(succes),
         depuis_cache=False,
+        depuis_cache_l1=any(r.depuis_cache for r in succes),
         indice_confiance=indice,
         avertissement=avertissement,
     )
