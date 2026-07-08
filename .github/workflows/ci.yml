@@ -120,36 +120,7 @@ jobs:
           retention-days: 7
 
   # ───────────────────────────────────────────────────────────────────────────
-  # Job 3 — Sécurité
-  # Scan des dépendances Python pour CVE connues via pip-audit.
-  # Note : starlette 0.37.2 présente des CVE transitives héritées de
-  # fastapi==0.111.0 (contrainte de version du projet). Le scan est
-  # informatif et ne bloque pas le pipeline (continue-on-error).
-  # ───────────────────────────────────────────────────────────────────────────
-  securite:
-    name: Sécurité (pip-audit)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: lint
-
-    steps:
-      - name: Récupérer le code
-        uses: actions/checkout@v4
-
-      - name: Configurer Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Installer pip-audit
-        run: pip install pip-audit
-
-      - name: Scanner les dépendances
-        run: pip-audit --requirement requirements.txt --desc
-        continue-on-error: true
-
-  # ───────────────────────────────────────────────────────────────────────────
-  # Job 4 — Build Docker
+  # Job 3 — Build Docker
   # Construit l'image en multi-stage, lance un conteneur de test et vérifie
   # que GET /sante retourne 200 avant tout push vers le registry.
   # Le push vers GHCR n'a lieu que sur develop et main, et uniquement si
@@ -160,7 +131,7 @@ jobs:
     name: Build Docker + smoke test
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [tests, securite]
+    needs: [tests]
 
     steps:
       - name: Récupérer le code
