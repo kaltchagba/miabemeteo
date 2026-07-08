@@ -1,16 +1,10 @@
-name: CI / CD — MiabeMETEO
+name: CI — MiabeMETEO
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Déclencheurs
-#   • feat/* et fix/* → CI uniquement (lint, tests, build)
-#   • PR vers main / develop / kaled → CI uniquement (pas de déploiement)
-#   • push develop → CI + gate 1 approbation → deploy staging
-#   • push main    → CI + gate 2 approbations → deploy production
-#   • workflow_dispatch → déploiement manuel (staging ou production)
-#
-# Gates d'approbation — à configurer dans GitHub :
-#   Settings → Environments → staging    → Required reviewers : 1
-#   Settings → Environments → production → Required reviewers : 2
+#   • Toutes les branches → lint + tests + build Docker
+#   • PR vers main / develop / kaled → idem
+#   • Le déploiement est géré par Railway (intégration GitHub native)
 # ─────────────────────────────────────────────────────────────────────────────
 on:
   push:
@@ -27,15 +21,6 @@ on:
       - develop
       - kaled
   workflow_dispatch:
-    inputs:
-      cible:
-        description: "Environnement à déployer"
-        required: true
-        default: staging
-        type: choice
-        options:
-          - staging
-          - production
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -124,15 +109,12 @@ jobs:
 
   # ───────────────────────────────────────────────────────────────────────────
   # Job 3 — Build Docker + smoke test
-  # Tourne sur toutes les branches et PR — aucune image n'est poussée ici.
-  # Le push vers le registry est délégué aux jobs de déploiement,
-  # protégés par les gates d'approbation.
   # ───────────────────────────────────────────────────────────────────────────
   docker-build:
     name: Build Docker + smoke test
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [tests]
+    needs: tests
 
     steps:
       - name: Récupérer le code
@@ -172,169 +154,3 @@ jobs:
       - name: Smoke test — arrêter le conteneur
         if: always()
         run: docker stop meteo_smoke || true
-
-  # ───────────────────────────────────────────────────────────────────────────
-  # Job 4 — Déploiement staging
-  #
-  # Déclenché sur :
-  #   • push develop
-  #   • workflow_dispatch avec cible = staging
-  #
-  # Gate : l'environment "staging" bloque le job jusqu'à ce qu'1 reviewer
-  # approuve dans GitHub Actions → onglet du run → bouton "Review deployments".
-  #
-  # À configurer dans GitHub :
-  #   Settings → Environments → staging → Required reviewers → ajouter 1 personne
-  # ───────────────────────────────────────────────────────────────────────────
-  deploy-staging:
-    name: "Déploiement staging — approbation 1 reviewer"
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: docker-build
-    if: |
-      (github.ref == 'refs/heads/develop' && github.event_name == 'push') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.cible == 'staging')
-    environment:
-      name: staging
-      url: ${{ vars.STAGING_URL }}
-
-    steps:
-      - name: Récupérer le code
-        uses: actions/checkout@v4
-
-      - name: Calculer le tag de l'image
-        run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
-
-      - name: Connexion au registry GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.REGISTRY_TOKEN }}
-        continue-on-error: true
-
-      - name: Construire et pousser l'image vers GHCR
-        run: |
-          docker build \
-            -t ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
-            -t ${{ env.IMAGE_NAME }}:latest \
-            .
-          docker push ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} || true
-          docker push ${{ env.IMAGE_NAME }}:latest || true
-
-      - name: Installer Railway CLI
-        run: npm install -g @railway/cli@latest
-
-      - name: Déployer sur Railway staging
-        run: railway up --service "${{ vars.RAILWAY_SERVICE_NAME }}" --detach
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-
-      - name: Vérifier le déploiement staging
-        if: vars.STAGING_URL != ''
-        run: |
-          sleep 30
-          curl --retry 6 \
-               --retry-delay 5 \
-               --retry-connrefused \
-               --fail \
-               --silent \
-               --show-error \
-               ${{ vars.STAGING_URL }}/sante
-
-      - name: Résumé du déploiement
-        if: always()
-        run: |
-          echo "## Déploiement staging" >> $GITHUB_STEP_SUMMARY
-          echo "- Commit : \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Branche : \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- URL : ${{ vars.STAGING_URL }}" >> $GITHUB_STEP_SUMMARY
-
-  # ───────────────────────────────────────────────────────────────────────────
-  # Job 5 — Déploiement production
-  #
-  # Déclenché sur :
-  #   • push main
-  #   • workflow_dispatch avec cible = production
-  #
-  # Gate : l'environment "production" bloque le job jusqu'à ce que 2 reviewers
-  # approuvent dans GitHub Actions → onglet du run → bouton "Review deployments".
-  # Les 2 approbations peuvent venir de personnes différentes.
-  #
-  # À configurer dans GitHub :
-  #   Settings → Environments → production → Required reviewers → ajouter 2 personnes
-  # ───────────────────────────────────────────────────────────────────────────
-  deploy-production:
-    name: "Déploiement production — approbation 2 reviewers"
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: docker-build
-    if: |
-      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.cible == 'production')
-    environment:
-      name: production
-      url: ${{ vars.PRODUCTION_URL }}
-
-    steps:
-      - name: Récupérer le code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Calculer le tag de l'image
-        run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
-
-      - name: Connexion au registry GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.REGISTRY_TOKEN }}
-        continue-on-error: true
-
-      - name: Construire et pousser l'image vers GHCR
-        run: |
-          docker build \
-            -t ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
-            -t ${{ env.IMAGE_NAME }}:latest \
-            .
-          docker push ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} || true
-          docker push ${{ env.IMAGE_NAME }}:latest || true
-
-      - name: Installer Railway CLI
-        run: npm install -g @railway/cli@latest
-
-      - name: Déployer sur Railway production
-        run: railway up --service "${{ vars.RAILWAY_SERVICE_NAME }}" --detach
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-
-      - name: Vérifier le déploiement production
-        if: vars.PRODUCTION_URL != ''
-        run: |
-          sleep 30
-          curl --retry 6 \
-               --retry-delay 5 \
-               --retry-connrefused \
-               --fail \
-               --silent \
-               --show-error \
-               ${{ vars.PRODUCTION_URL }}/sante
-
-      - name: Créer un tag de version
-        run: |
-          TAG="v$(date +'%Y%m%d-%H%M')"
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "Deploy production — ${{ github.sha }}"
-          git push origin "$TAG"
-        continue-on-error: true
-
-      - name: Résumé du déploiement
-        if: always()
-        run: |
-          echo "## Déploiement production" >> $GITHUB_STEP_SUMMARY
-          echo "- Commit : \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Branche : \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- URL : ${{ vars.PRODUCTION_URL }}" >> $GITHUB_STEP_SUMMARY
