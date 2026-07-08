@@ -22,6 +22,11 @@ services:
     env_file:
       - .env
 
+    # Surcharge REDIS_URL : dans Docker, Redis est joignable via le nom de service "redis"
+    # (en dev local sans Docker, .env pointe sur 127.0.0.1:6379)
+    environment:
+      - REDIS_URL=redis://redis:6379
+
     # Ouvre le port 8000 du conteneur sur le port 8000 de la machine hôte
     # Format : "hote:conteneur"
     ports:

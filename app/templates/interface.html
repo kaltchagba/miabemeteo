@@ -689,7 +689,7 @@ function pipeHtml(d) {
     {n:4, name:'Appels parallèles (asyncio.gather)', desc:'3 APIs en simultané, chacune gardée par son Circuit Breaker'},
     {n:5, name:'Fusion et stockage', desc:'Calcul indice de confiance, écriture L1 + L2, retour MeteoConsolidée'},
   ];
-  const active = d.depuis_cache ? [1, 2] : [1, 4, 5];
+  const active = d.depuis_cache ? [1, 2] : d.depuis_cache_l1 ? [1, 3, 4, 5] : [1, 4, 5];
   return steps.map(s =>
     `<div class="pipe-step${active.includes(s.n) ? ' active' : ''}">
       <div class="pipe-num">${s.n}</div>
