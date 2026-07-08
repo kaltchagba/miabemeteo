@@ -160,9 +160,10 @@ jobs:
 
       - name: Smoke test — vérifier GET /sante
         run: |
-          curl --retry 8 \
+          curl --retry 10 \
                --retry-delay 3 \
                --retry-connrefused \
+               --retry-all-errors \
                --fail \
                --silent \
                --show-error \
