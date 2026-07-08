@@ -222,13 +222,12 @@ jobs:
           docker push ${{ env.IMAGE_NAME }}:latest || true
 
       - name: Installer Railway CLI
-        run: npm install -g @railway/cli
+        run: npm install -g @railway/cli@latest
 
       - name: Déployer sur Railway staging
-        run: railway up --service ${{ secrets.RAILWAY_SERVICE_ID }} --detach
+        run: railway up --service "${{ vars.RAILWAY_SERVICE_NAME }}" --detach
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        continue-on-error: true
 
       - name: Vérifier le déploiement staging
         if: vars.STAGING_URL != ''
@@ -241,7 +240,6 @@ jobs:
                --silent \
                --show-error \
                ${{ vars.STAGING_URL }}/sante
-        continue-on-error: true
 
       - name: Résumé du déploiement
         if: always()
@@ -304,13 +302,12 @@ jobs:
           docker push ${{ env.IMAGE_NAME }}:latest || true
 
       - name: Installer Railway CLI
-        run: npm install -g @railway/cli
+        run: npm install -g @railway/cli@latest
 
       - name: Déployer sur Railway production
-        run: railway up --service ${{ secrets.RAILWAY_SERVICE_ID }} --detach
+        run: railway up --service "${{ vars.RAILWAY_SERVICE_NAME }}" --detach
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        continue-on-error: true
 
       - name: Vérifier le déploiement production
         if: vars.PRODUCTION_URL != ''
@@ -323,7 +320,6 @@ jobs:
                --silent \
                --show-error \
                ${{ vars.PRODUCTION_URL }}/sante
-        continue-on-error: true
 
       - name: Créer un tag de version
         run: |
