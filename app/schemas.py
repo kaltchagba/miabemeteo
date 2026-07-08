@@ -105,6 +105,7 @@ class MeteoResponse(BaseModel):
     fournisseurs_ko: list[str] = Field(default_factory=list)
     nb_sources: int = Field(..., ge=1)
     depuis_cache: bool = Field(default=False)
+    depuis_cache_l1: bool = Field(default=False)
     genere_a: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     # 50 si 1 source, 100 si consensus parfait, 0 si forte divergence
     indice_confiance: int = Field(default=100, ge=0, le=100)
