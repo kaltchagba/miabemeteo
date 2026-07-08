@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger import jsonlogger
 
@@ -100,6 +100,11 @@ def redoc_ui() -> HTMLResponse:
         title="Agrégateur Météo Multi-Sources — ReDoc",
         redoc_js_url="https://unpkg.com/redoc@2.1.5/bundles/redoc.standalone.js",
     )
+
+
+@app.get("/", include_in_schema=False)
+def accueil() -> RedirectResponse:
+    return RedirectResponse(url="/interface", status_code=302)
 
 
 @app.get(
