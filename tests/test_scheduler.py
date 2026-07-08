@@ -164,8 +164,11 @@ async def test_tache_prechauffage_utilise_villes_populaires(monkeypatch):
     """Avec des données Redis, la tâche utilise les villes les plus demandées."""
     monkeypatch.setattr(
         cache_module,
-        "obtenir_villes_populaires",
-        lambda n: [("berlin", "de"), ("tokyo", "jp")],
+        "obtenir_top_villes_score",
+        lambda n: [
+            {"rang": 1, "ville": "Berlin", "pays": "DE", "nb_requetes": 10},
+            {"rang": 2, "ville": "Tokyo", "pays": "JP", "nb_requetes": 5},
+        ],
     )
 
     prechaufees = []
@@ -186,8 +189,11 @@ async def test_tache_prechauffage_resiliente_aux_erreurs(monkeypatch):
     """Une erreur sur une ville n'interrompt pas le traitement des suivantes."""
     monkeypatch.setattr(
         cache_module,
-        "obtenir_villes_populaires",
-        lambda n: [("ville_ko", "xx"), ("paris", "fr")],
+        "obtenir_top_villes_score",
+        lambda n: [
+            {"rang": 1, "ville": "Ville_Ko", "pays": "XX", "nb_requetes": 10},
+            {"rang": 2, "ville": "Paris", "pays": "FR", "nb_requetes": 5},
+        ],
     )
 
     prechaufees = []

@@ -35,15 +35,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Météo"])
 
 _http_client: httpx.AsyncClient | None = None
+_http_client_lock = asyncio.Lock()
 
 
 async def get_http_client() -> httpx.AsyncClient:
     global _http_client
-    if _http_client is None or _http_client.is_closed:
-        _http_client = httpx.AsyncClient(
-            timeout=PROVIDER_TIMEOUT,
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-        )
+    async with _http_client_lock:
+        if _http_client is None or _http_client.is_closed:
+            _http_client = httpx.AsyncClient(
+                timeout=PROVIDER_TIMEOUT,
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            )
     return _http_client
 
 

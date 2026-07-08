@@ -5,7 +5,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app import cache as cache_module
-from app.config import RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW
+from app.config import RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW, TRUSTED_PROXY
 
 logger = logging.getLogger(__name__)
 
@@ -58,14 +58,23 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         chemin = request.url.path
 
-        if any(chemin.startswith(c) for c in _CHEMINS_EXCLUS):
+        # Comparaison exacte ou préfixe suivi de "/" pour éviter qu'un chemin
+        # comme /sante-bypass ne court-circuite le rate limiting.
+        if chemin in _CHEMINS_EXCLUS or any(
+            chemin.startswith(c + "/") for c in _CHEMINS_EXCLUS
+        ):
             response = await call_next(request)
             self._ajouter_headers_securite(
                 response, skip_csp=chemin in _CHEMINS_SANS_CSP
             )
             return response
 
-        ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        # X-Forwarded-For n'est lu que si l'app est derrière un proxy de confiance
+        # (TRUSTED_PROXY=true). Sans cette configuration, un client malveillant
+        # pourrait forger ce header pour contourner le rate limiting.
+        ip = ""
+        if TRUSTED_PROXY:
+            ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
         if not ip:
             ip = request.client.host if request.client else "unknown"
 

@@ -346,6 +346,36 @@ async def batch_meteo(
     )
 
 
+@router.delete(
+    "/cache",
+    summary="Invalider le cache d'une ville",
+    description="Supprime les entrées L1 (3 fournisseurs) et L2 (réponse consolidée) pour une ville.",
+    responses={
+        200: {"description": "Cache invalidé"},
+    },
+)
+async def invalider_cache_ville(
+    ville: str = Query(
+        ...,
+        min_length=1,
+        max_length=100,
+        pattern=r"^[\w\s\-\'\.\,À-ɏ]+$",
+        examples=["Paris"],
+    ),
+    pays: str = Query(
+        default="FR",
+        min_length=2,
+        max_length=2,
+        pattern=r"^[A-Za-z]{2}$",
+        examples=["FR"],
+    ),
+) -> dict:
+    ville = ville.strip()
+    pays = pays.strip().upper()
+    cache_module.invalider_cache(ville, pays)
+    return {"message": f"Cache invalidé pour {ville}, {pays}"}
+
+
 @router.websocket("/ws/stats")
 async def ws_stats(websocket: WebSocket) -> None:
     """Pousse les métriques de l'application toutes les 5 secondes (cache, CB, top villes)."""

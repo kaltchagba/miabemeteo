@@ -263,7 +263,7 @@ def obtenir_top_villes_score(n: int = 10) -> list[dict]:
                 villes.append(
                     {
                         "rang": rang,
-                        "ville": parties[0].capitalize(),
+                        "ville": parties[0].title(),
                         "pays": parties[1].upper(),
                         "nb_requetes": int(score),
                     }

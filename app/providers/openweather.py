@@ -1,9 +1,9 @@
 import httpx
 
 from app.config import (
-    OPENWEATHER_API_KEY,
     OPENWEATHER_BASE_URL,
     PROVIDER_TIMEOUT,
+    get_settings,
 )
 from app.schemas import DonneesMeteo
 
@@ -14,7 +14,7 @@ async def fetch(client: httpx.AsyncClient, ville: str, pays: str) -> DonneesMete
     """Interroge l'API OpenWeatherMap pour une ville donnée. Retourne DonneesMeteo normalisé."""
     params = {
         "q": f"{ville},{pays}",
-        "appid": OPENWEATHER_API_KEY,
+        "appid": get_settings().openweather_api_key.get_secret_value(),
         "units": "metric",
         "lang": "fr",
     }

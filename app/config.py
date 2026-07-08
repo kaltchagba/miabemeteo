@@ -1,40 +1,97 @@
-# app/config.py
-# Constantes lues depuis les variables d'environnement (fichier .env).
-# Copier .env.example → .env et renseigner les clés avant de lancer.
+from functools import lru_cache
 
-import os
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-OPENWEATHER_API_KEY: str = os.environ.get("OPENWEATHER_API_KEY", "")
-WEATHERAPI_KEY: str = os.environ.get("WEATHERAPI_KEY", "")
 
-OPENWEATHER_BASE_URL: str = "https://api.openweathermap.org/data/2.5"
-OPEN_METEO_GEOCODING_URL: str = "https://geocoding-api.open-meteo.com/v1"
-OPEN_METEO_FORECAST_URL: str = "https://api.open-meteo.com/v1"
-WEATHERAPI_BASE_URL: str = "https://api.weatherapi.com/v1"
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
-REDIS_URL: str = os.environ.get("REDIS_URL", "redis://localhost:6379")
-CACHE_COURT_TTL: int = int(os.environ.get("CACHE_COURT_TTL", "300"))  # 5 min
-CACHE_LONG_TTL: int = int(os.environ.get("CACHE_LONG_TTL", "3600"))  # 1 h
+    # Clés API (secrètes — masquées dans les logs et le repr)
+    openweather_api_key: SecretStr = SecretStr("")
+    weatherapi_key: SecretStr = SecretStr("")
 
-PROVIDER_TIMEOUT: float = float(os.environ.get("PROVIDER_TIMEOUT", "5.0"))
+    # URLs des fournisseurs
+    openweather_base_url: str = "https://api.openweathermap.org/data/2.5"
+    open_meteo_geocoding_url: str = "https://geocoding-api.open-meteo.com/v1"
+    open_meteo_forecast_url: str = "https://api.open-meteo.com/v1"
+    weatherapi_base_url: str = "https://api.weatherapi.com/v1"
 
-CIRCUIT_BREAKER_THRESHOLD: int = int(os.environ.get("CIRCUIT_BREAKER_THRESHOLD", "3"))
-CIRCUIT_BREAKER_RECOVERY: int = int(os.environ.get("CIRCUIT_BREAKER_RECOVERY", "30"))
-CIRCUIT_BREAKER_WINDOW: int = int(os.environ.get("CIRCUIT_BREAKER_WINDOW", "60"))
+    # Redis
+    redis_url: str = "redis://localhost:6379"
+    cache_court_ttl: int = 300
+    cache_long_ttl: int = 3600
 
-TOP_CITIES_COUNT: int = int(os.environ.get("TOP_CITIES_COUNT", "20"))
-SCHEDULER_INTERVAL_MINUTES: int = int(
-    os.environ.get("SCHEDULER_INTERVAL_MINUTES", "10")
-)
+    # HTTP
+    provider_timeout: float = 5.0
 
-CORS_ORIGINS: str = os.environ.get("CORS_ORIGINS", "*")
+    # Circuit breaker
+    circuit_breaker_threshold: int = 3
+    circuit_breaker_recovery: int = 30
+    circuit_breaker_window: int = 60
 
-RATE_LIMIT_REQUESTS: int = int(os.environ.get("RATE_LIMIT_REQUESTS", "100"))
-RATE_LIMIT_WINDOW: int = int(os.environ.get("RATE_LIMIT_WINDOW", "60"))
+    # Scheduler
+    top_cities_count: int = 20
+    scheduler_interval_minutes: int = 10
 
-SEUIL_CANICULE: float = float(os.environ.get("SEUIL_CANICULE", "35"))
-SEUIL_GEL: float = float(os.environ.get("SEUIL_GEL", "0"))
-SEUIL_VENT_FORT: float = float(os.environ.get("SEUIL_VENT_FORT", "80"))
-TTL_ALERTE: int = int(os.environ.get("TTL_ALERTE", "3600"))
+    # CORS
+    cors_origins: str = "http://localhost:8000"
 
-HISTORIQUE_MAX_ENTREES: int = int(os.environ.get("HISTORIQUE_MAX_ENTREES", "48"))
+    # Rate limiting
+    rate_limit_requests: int = 100
+    rate_limit_window: int = 60
+    trusted_proxy: bool = False
+
+    # Seuils d'alerte
+    seuil_canicule: float = 35.0
+    seuil_gel: float = 0.0
+    seuil_vent_fort: float = 80.0
+    ttl_alerte: int = 3600
+
+    # Historique
+    historique_max_entrees: int = 48
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+# Constantes exposées au niveau module pour compatibilité des imports existants.
+# Les clés API sont exclues : les providers appellent get_settings().*.get_secret_value().
+_s = get_settings()
+
+OPENWEATHER_BASE_URL: str = _s.openweather_base_url
+OPEN_METEO_GEOCODING_URL: str = _s.open_meteo_geocoding_url
+OPEN_METEO_FORECAST_URL: str = _s.open_meteo_forecast_url
+WEATHERAPI_BASE_URL: str = _s.weatherapi_base_url
+
+REDIS_URL: str = _s.redis_url
+CACHE_COURT_TTL: int = _s.cache_court_ttl
+CACHE_LONG_TTL: int = _s.cache_long_ttl
+
+PROVIDER_TIMEOUT: float = _s.provider_timeout
+
+CIRCUIT_BREAKER_THRESHOLD: int = _s.circuit_breaker_threshold
+CIRCUIT_BREAKER_RECOVERY: int = _s.circuit_breaker_recovery
+CIRCUIT_BREAKER_WINDOW: int = _s.circuit_breaker_window
+
+TOP_CITIES_COUNT: int = _s.top_cities_count
+SCHEDULER_INTERVAL_MINUTES: int = _s.scheduler_interval_minutes
+
+CORS_ORIGINS: str = _s.cors_origins
+
+RATE_LIMIT_REQUESTS: int = _s.rate_limit_requests
+RATE_LIMIT_WINDOW: int = _s.rate_limit_window
+TRUSTED_PROXY: bool = _s.trusted_proxy
+
+SEUIL_CANICULE: float = _s.seuil_canicule
+SEUIL_GEL: float = _s.seuil_gel
+SEUIL_VENT_FORT: float = _s.seuil_vent_fort
+TTL_ALERTE: int = _s.ttl_alerte
+
+HISTORIQUE_MAX_ENTREES: int = _s.historique_max_entrees

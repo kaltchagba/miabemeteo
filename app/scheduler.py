@@ -89,9 +89,9 @@ async def _tache_prechauffage() -> None:
     debut = datetime.now(timezone.utc)
     logger.info("Début pré-chauffe scheduler (%s)", debut.strftime("%H:%M:%S"))
 
-    villes_populaires = cache.obtenir_villes_populaires(TOP_CITIES_COUNT)
+    villes_populaires = cache.obtenir_top_villes_score(TOP_CITIES_COUNT)
     if villes_populaires:
-        villes = [(v.title(), p.upper()) for v, p in villes_populaires]
+        villes = [(v["ville"], v["pays"]) for v in villes_populaires]
     else:
         villes = VILLES_DEFAUT[:TOP_CITIES_COUNT]
 

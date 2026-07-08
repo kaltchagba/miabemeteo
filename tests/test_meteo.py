@@ -250,3 +250,33 @@ def test_pays_normalise(client: TestClient):
     assert response.status_code != 422
     if response.status_code == 200:
         assert response.json()["pays"] == "FR"
+
+
+@respx.mock
+def test_comparer_trois_sources(client: TestClient):
+    """GET /comparer avec 3 providers OK retourne sources, écarts et indice_consensus."""
+    _mock_tous_ok()
+    response = client.get("/comparer", params={"ville": "Paris", "pays": "FR"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["sources"]) == 3
+    assert "temperature_c" in data["ecarts"]
+    assert 0 <= data["indice_consensus"] <= 100
+    assert len(data["fournisseurs_ko"]) == 0
+    assert data["ville"] == "Paris"
+    assert data["pays"] == "FR"
+
+
+def test_ville_regex_invalide(client: TestClient):
+    """Ville contenant des caractères interdits doit retourner 422."""
+    response = client.get(
+        "/meteo", params={"ville": "<script>alert(1)</script>", "pays": "FR"}
+    )
+    assert response.status_code == 422
+
+
+def test_pays_trop_long(client: TestClient):
+    """Code pays de plus de 2 caractères doit retourner 422."""
+    response = client.get("/meteo", params={"ville": "Paris", "pays": "FRA"})
+    assert response.status_code == 422

@@ -1,9 +1,9 @@
 import httpx
 
 from app.config import (
-    WEATHERAPI_KEY,
     WEATHERAPI_BASE_URL,
     PROVIDER_TIMEOUT,
+    get_settings,
 )
 from app.schemas import DonneesMeteo
 
@@ -65,7 +65,7 @@ async def fetch(client: httpx.AsyncClient, ville: str, pays: str) -> DonneesMete
     response = await client.get(
         f"{WEATHERAPI_BASE_URL}/current.json",
         params={
-            "key": WEATHERAPI_KEY,
+            "key": get_settings().weatherapi_key.get_secret_value(),
             "q": f"{ville},{pays}",
             "lang": "fr",
             "aqi": "no",

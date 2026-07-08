@@ -1,6 +1,4 @@
-import base64
 import logging
-import secrets
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -9,7 +7,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger import jsonlogger
 
@@ -72,13 +71,14 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS.split(","),
-    allow_methods=["GET", "POST"],  # POST requis pour /batch
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
 app.add_middleware(RateLimitMiddleware)
 
 app.include_router(meteo_router)
 app.include_router(donnees_router)
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(app)
 
@@ -108,7 +108,7 @@ def redoc_ui() -> HTMLResponse:
     tags=["Infrastructure"],
     summary="État de santé de l'application",
 )
-def sante() -> SanteResponse:
+async def sante() -> SanteResponse:
     """Retourne l'état des circuit breakers et les métriques Redis. Utilisé par le healthcheck Docker."""
     etats_cb = []
     for provider_id, cb in circuit_breakers.items():
@@ -228,18 +228,26 @@ def dashboard() -> HTMLResponse:
 
 
 @app.get(
+    "/",
+    response_class=HTMLResponse,
+    tags=["Infrastructure"],
+    summary="Accueil — redirige vers l'interface",
+    include_in_schema=False,
+)
+def accueil() -> RedirectResponse:
+    return RedirectResponse(url="/interface", status_code=302)
+
+
+@app.get(
     "/carte",
     response_class=HTMLResponse,
     tags=["Infrastructure"],
     summary="Carte météo mondiale",
     include_in_schema=False,
 )
-def carte() -> HTMLResponse:
+def carte() -> RedirectResponse:
     """Redirige vers /interface pour compatibilité."""
-    return HTMLResponse(
-        content='<meta http-equiv="refresh" content="0;url=/interface#monde">',
-        status_code=302,
-    )
+    return RedirectResponse(url="/interface", status_code=302)
 
 
 @app.get(
@@ -253,12 +261,9 @@ def interface() -> HTMLResponse:
     html_file = Path(__file__).parent / "templates" / "interface.html"
     html = html_file.read_text(encoding="utf-8")
 
-    nonce = base64.b64encode(secrets.token_bytes(18)).decode()
-    html = html.replace("__CSP_NONCE__", nonce)
-
     csp = (
         "default-src 'self'; "
-        f"script-src 'self' https://unpkg.com 'nonce-{nonce}'; "
+        "script-src 'self' https://unpkg.com; "
         "script-src-attr 'none'; "
         "style-src 'self' https://unpkg.com 'unsafe-inline'; "
         "img-src 'self' https://*.basemaps.cartocdn.com "

@@ -155,7 +155,7 @@ class EtatCircuitBreaker(BaseModel):
 class EntreeHistorique(BaseModel):
     """Une entrée dans l'historique de températures d'une ville."""
 
-    timestamp: str
+    timestamp: datetime
     temperature_c: float
     description: str
     humidite_pct: float

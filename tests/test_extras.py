@@ -397,6 +397,34 @@ def test_rate_limit_headers(client):
     """Les réponses doivent contenir les headers X-RateLimit."""
     r = client.get("/sante")
     # /sante est exclue du rate limiting → pas de headers RL
-    # Mais /historique doit en avoir (si Redis est OK)
     # On teste juste que le middleware ne crashe pas
     assert r.status_code == 200
+
+
+def test_carte_redirige_correctement(client):
+    """GET /carte doit retourner 302 avec un header Location vers /interface."""
+    r = client.get("/carte", follow_redirects=False)
+    assert r.status_code == 302
+    assert "/interface" in r.headers.get("location", "")
+
+
+def test_securite_headers_presents(client, redis_mock):
+    """Les réponses hors chemins exclus doivent porter les headers de sécurité."""
+    r = client.get("/villes-populaires")
+    assert r.status_code == 200
+    assert r.headers.get("x-content-type-options") == "nosniff"
+    assert r.headers.get("x-frame-options") == "SAMEORIGIN"
+    assert "x-ratelimit-limit" in r.headers
+
+
+def test_invalider_cache(client):
+    """DELETE /cache doit retourner 200 avec un message de confirmation."""
+    r = client.delete("/cache?ville=Paris&pays=FR")
+    assert r.status_code == 200
+    assert "Paris" in r.json()["message"]
+
+
+def test_invalider_cache_pays_invalide(client):
+    """DELETE /cache avec un code pays incorrect doit retourner 422."""
+    r = client.delete("/cache?ville=Paris&pays=FRA")
+    assert r.status_code == 422
