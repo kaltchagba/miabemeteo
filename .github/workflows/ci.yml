@@ -2,9 +2,15 @@ name: CI / CD — MiabeMETEO
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Déclencheurs
-#   • feat/* et fix/* → CI uniquement (lint, tests, sécurité, build)
-#   • develop         → CI + déploiement automatique sur staging
-#   • main            → CI + approbation manuelle + déploiement production
+#   • feat/* et fix/* → CI uniquement (lint, tests, build)
+#   • PR vers main / develop / kaled → CI uniquement (pas de déploiement)
+#   • push develop → CI + gate 1 approbation → deploy staging
+#   • push main    → CI + gate 2 approbations → deploy production
+#   • workflow_dispatch → déploiement manuel (staging ou production)
+#
+# Gates d'approbation — à configurer dans GitHub :
+#   Settings → Environments → staging    → Required reviewers : 1
+#   Settings → Environments → production → Required reviewers : 2
 # ─────────────────────────────────────────────────────────────────────────────
 on:
   push:
@@ -20,15 +26,21 @@ on:
       - main
       - develop
       - kaled
+  workflow_dispatch:
+    inputs:
+      cible:
+        description: "Environnement à déployer"
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
 
-# Un seul pipeline actif par branche — annule les runs précédents en cours
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Variables globales
-# ─────────────────────────────────────────────────────────────────────────────
 env:
   PYTHON_VERSION: "3.11"
   IMAGE_NAME: ghcr.io/${{ github.repository }}/meteo-app
@@ -37,8 +49,6 @@ jobs:
 
   # ───────────────────────────────────────────────────────────────────────────
   # Job 1 — Lint
-  # Vérification du style et du formatage. Bloque tout le reste si erreur.
-  # Pas de cache : ruff seul s'installe en moins de 5 secondes.
   # ───────────────────────────────────────────────────────────────────────────
   lint:
     name: Lint (ruff)
@@ -65,13 +75,9 @@ jobs:
 
   # ───────────────────────────────────────────────────────────────────────────
   # Job 2 — Tests
-  # Suite pytest complète avec mesure de couverture.
-  # Cache pip indexé sur le hash de requirements.txt pour éviter
-  # de retélécharger les dépendances à chaque run.
-  # Le rapport XML est conservé 7 jours comme artifact.
   # ───────────────────────────────────────────────────────────────────────────
   tests:
-    name: Tests (pytest + couverture)
+    name: Tests (pytest + couverture ≥ 70 %)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: lint
@@ -90,8 +96,7 @@ jobs:
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            pip-${{ runner.os }}-
+          restore-keys: pip-${{ runner.os }}-
 
       - name: Installer les dépendances
         run: pip install -r requirements.txt
@@ -105,10 +110,8 @@ jobs:
             --cov-fail-under=70 \
             -v
         env:
-          # Clés factices — respx intercepte tous les appels réseau en test
           OPENWEATHER_API_KEY: "test_key"
           WEATHERAPI_KEY: "test_key"
-          # fakeredis remplace Redis en test ; variable présente pour config.py
           REDIS_URL: "redis://localhost:6379"
 
       - name: Publier le rapport de couverture
@@ -120,12 +123,10 @@ jobs:
           retention-days: 7
 
   # ───────────────────────────────────────────────────────────────────────────
-  # Job 3 — Build Docker
-  # Construit l'image en multi-stage, lance un conteneur de test et vérifie
-  # que GET /sante retourne 200 avant tout push vers le registry.
-  # Le push vers GHCR n'a lieu que sur develop et main, et uniquement si
-  # le secret REGISTRY_TOKEN est configuré dans le dépôt.
-  # L'image est taguée avec le SHA court du commit pour la traçabilité.
+  # Job 3 — Build Docker + smoke test
+  # Tourne sur toutes les branches et PR — aucune image n'est poussée ici.
+  # Le push vers le registry est délégué aux jobs de déploiement,
+  # protégés par les gates d'approbation.
   # ───────────────────────────────────────────────────────────────────────────
   docker-build:
     name: Build Docker + smoke test
@@ -171,35 +172,27 @@ jobs:
         if: always()
         run: docker stop meteo_smoke || true
 
-      - name: Connexion au registry GHCR
-        if: (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && github.event_name == 'push'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.REGISTRY_TOKEN }}
-        continue-on-error: true
-
-      - name: Pousser l'image vers GHCR
-        if: (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && github.event_name == 'push'
-        run: |
-          docker push ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-          docker push ${{ env.IMAGE_NAME }}:latest
-        continue-on-error: true
-
   # ───────────────────────────────────────────────────────────────────────────
-  # Job 5 — Déploiement staging
-  # Déclenché uniquement sur la branche develop après un build Docker réussi.
-  # Déploie automatiquement sur Railway (environnement staging).
-  # Nécessite les secrets RAILWAY_TOKEN et RAILWAY_SERVICE_ID configurés
-  # dans Settings → Secrets and variables → Actions du dépôt GitHub.
+  # Job 4 — Déploiement staging
+  #
+  # Déclenché sur :
+  #   • push develop
+  #   • workflow_dispatch avec cible = staging
+  #
+  # Gate : l'environment "staging" bloque le job jusqu'à ce qu'1 reviewer
+  # approuve dans GitHub Actions → onglet du run → bouton "Review deployments".
+  #
+  # À configurer dans GitHub :
+  #   Settings → Environments → staging → Required reviewers → ajouter 1 personne
   # ───────────────────────────────────────────────────────────────────────────
   deploy-staging:
-    name: Déploiement staging
+    name: "Déploiement staging — approbation 1 reviewer"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     needs: docker-build
-    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    if: |
+      (github.ref == 'refs/heads/develop' && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.cible == 'staging')
     environment:
       name: staging
       url: ${{ vars.STAGING_URL }}
@@ -207,6 +200,26 @@ jobs:
     steps:
       - name: Récupérer le code
         uses: actions/checkout@v4
+
+      - name: Calculer le tag de l'image
+        run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Connexion au registry GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+        continue-on-error: true
+
+      - name: Construire et pousser l'image vers GHCR
+        run: |
+          docker build \
+            -t ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
+            -t ${{ env.IMAGE_NAME }}:latest \
+            .
+          docker push ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} || true
+          docker push ${{ env.IMAGE_NAME }}:latest || true
 
       - name: Installer Railway CLI
         run: npm install -g @railway/cli
@@ -239,19 +252,27 @@ jobs:
           echo "- URL : ${{ vars.STAGING_URL }}" >> $GITHUB_STEP_SUMMARY
 
   # ───────────────────────────────────────────────────────────────────────────
-  # Job 6 — Déploiement production
-  # Déclenché uniquement sur main après un build Docker réussi.
-  # L'environment "production" impose une approbation manuelle dans GitHub
-  # avant d'exécuter les steps (Settings → Environments → production →
-  # Required reviewers).
-  # Un tag Git est créé automatiquement après déploiement réussi.
+  # Job 5 — Déploiement production
+  #
+  # Déclenché sur :
+  #   • push main
+  #   • workflow_dispatch avec cible = production
+  #
+  # Gate : l'environment "production" bloque le job jusqu'à ce que 2 reviewers
+  # approuvent dans GitHub Actions → onglet du run → bouton "Review deployments".
+  # Les 2 approbations peuvent venir de personnes différentes.
+  #
+  # À configurer dans GitHub :
+  #   Settings → Environments → production → Required reviewers → ajouter 2 personnes
   # ───────────────────────────────────────────────────────────────────────────
   deploy-production:
-    name: Déploiement production
+    name: "Déploiement production — approbation 2 reviewers"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     needs: docker-build
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.cible == 'production')
     environment:
       name: production
       url: ${{ vars.PRODUCTION_URL }}
@@ -261,6 +282,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calculer le tag de l'image
+        run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Connexion au registry GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+        continue-on-error: true
+
+      - name: Construire et pousser l'image vers GHCR
+        run: |
+          docker build \
+            -t ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
+            -t ${{ env.IMAGE_NAME }}:latest \
+            .
+          docker push ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} || true
+          docker push ${{ env.IMAGE_NAME }}:latest || true
 
       - name: Installer Railway CLI
         run: npm install -g @railway/cli
