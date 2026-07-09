@@ -5,9 +5,6 @@
 #     docker compose up
 # ============================================================
 
-# Version du format docker-compose (3.9 = recommandé pour les projets modernes)
-version: "3.9"
-
 services:
 
   # ---- Service 1 : l'application FastAPI ----
@@ -34,6 +31,9 @@ services:
 
     # Redémarre automatiquement si le conteneur plante
     restart: unless-stopped
+
+    # 1 worker : état circuit breaker partagé dans le même process (pas de split inter-worker)
+    command: ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
 
     # Vérifie que l'application répond bien après le démarrage
     healthcheck:

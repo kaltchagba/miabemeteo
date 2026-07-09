@@ -164,9 +164,9 @@ def dashboard() -> HTMLResponse:
     cb_html = "".join(
         f'<div class="cb">'
         f'<span class="dot" style="background:{couleur(cb.etat.value)}"></span>'
-        f"<strong>{pid}</strong>"
-        f'<span class="etat">{cb.etat.value}</span>'
+        f'<span class="cb-name">{pid}</span>'
         f'<span class="erreurs">{cb.nb_erreurs_recentes} erreur(s)</span>'
+        f'<span class="etat">{cb.etat.value}</span>'
         f"</div>"
         for pid, cb in circuit_breakers.items()
     )
@@ -175,36 +175,49 @@ def dashboard() -> HTMLResponse:
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta http-equiv="refresh" content="10">
-  <title>Dashboard Météo</title>
+  <title>Dashboard — MiabeMETEO</title>
   <style>
-    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{ font-family: -apple-system, sans-serif; background: #0f172a;
-            color: #e2e8f0; padding: 2rem; }}
-    h1 {{ color: #38bdf8; margin-bottom: .25rem; font-size: 1.75rem; }}
-    .sub {{ color: #64748b; margin-bottom: 2rem; font-size: .9rem; }}
-    h2 {{ color: #94a3b8; font-size: 1rem; text-transform: uppercase;
-           letter-spacing: .1em; margin: 1.5rem 0 .75rem; }}
-    .grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }}
-    .card {{ background: #1e293b; border-radius: 12px; padding: 1.5rem;
-             text-align: center; border: 1px solid #334155; }}
-    .val {{ font-size: 2.5rem; font-weight: 700; color: #38bdf8; }}
-    .lbl {{ color: #94a3b8; margin-top: .5rem; font-size: .875rem; }}
-    .cb  {{ background: #1e293b; border-radius: 8px; padding: .875rem 1rem;
-            margin-bottom: .5rem; display: flex; align-items: center; gap: .75rem;
-            border: 1px solid #334155; }}
-    .dot {{ width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }}
-    .etat {{ margin-left: auto; font-size: .8rem; font-weight: 600;
-             background: #0f172a; padding: .2rem .6rem; border-radius: 999px; }}
-    .erreurs {{ color: #64748b; font-size: .8rem; }}
-    .note {{ color: #475569; font-size: .8rem; margin-top: 2rem; }}
+    *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
+    body{{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
+          background:#06090f;color:#d8e2f0;min-height:100vh;padding:2rem 1.5rem 3rem}}
+    nav{{display:flex;align-items:center;justify-content:space-between;
+         margin-bottom:2rem;padding-bottom:1rem;
+         border-bottom:1px solid rgba(255,255,255,.07)}}
+    .logo{{font-size:1rem;font-weight:700;color:#00c4a7;letter-spacing:.02em}}
+    .logo span{{color:#d8e2f0;font-weight:400}}
+    .back{{font-size:.78rem;color:#4d6080;text-decoration:none;
+           padding:.3rem .8rem;border:1px solid rgba(255,255,255,.07);
+           border-radius:6px;transition:color .15s,border-color .15s}}
+    .back:hover{{color:#00c4a7;border-color:rgba(0,196,167,.3)}}
+    h2{{font-size:.72rem;font-weight:600;text-transform:uppercase;
+        letter-spacing:.1em;color:#4d6080;margin:1.75rem 0 .75rem}}
+    .grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:.875rem}}
+    .card{{background:rgba(10,16,28,.97);border:1px solid rgba(255,255,255,.07);
+           border-radius:10px;padding:1.375rem 1rem;text-align:center}}
+    .val{{font-size:2.25rem;font-weight:700;color:#00c4a7;
+          font-variant-numeric:tabular-nums;line-height:1}}
+    .lbl{{color:#4d6080;margin-top:.5rem;font-size:.8rem}}
+    .cb{{background:rgba(10,16,28,.97);border:1px solid rgba(255,255,255,.07);
+         border-radius:8px;padding:.875rem 1rem;margin-bottom:.5rem;
+         display:flex;align-items:center;gap:.75rem}}
+    .dot{{width:10px;height:10px;border-radius:50%;flex-shrink:0}}
+    .cb-name{{font-size:.875rem;font-weight:500}}
+    .etat{{margin-left:auto;font-size:.72rem;font-weight:600;
+           padding:.2rem .65rem;border-radius:999px;
+           background:rgba(0,0,0,.35);letter-spacing:.03em}}
+    .erreurs{{color:#4d6080;font-size:.75rem}}
+    .note{{color:#4d6080;font-size:.75rem;margin-top:2rem;line-height:1.6}}
   </style>
 </head>
 <body>
-  <h1>🌤 Dashboard Agrégateur Météo</h1>
-  <p class="sub">Rafraîchissement automatique toutes les 10 secondes</p>
+  <nav>
+    <div class="logo">MiabeMETEO <span>· Dashboard</span></div>
+    <a class="back" href="/interface">← Interface</a>
+  </nav>
 
-  <h2>Métriques Cache Redis</h2>
+  <h2>Cache Redis</h2>
   <div class="grid">
     <div class="card">
       <div class="val">{stats['hits']}</div>
@@ -225,7 +238,7 @@ def dashboard() -> HTMLResponse:
 
   <p class="note">
     Généré le {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC
-    · Scheduler actif — pré-chauffe des villes populaires toutes les 10 min
+    · Rafraîchissement toutes les 10 s · Scheduler actif — pré-chauffe toutes les 10 min
   </p>
 </body>
 </html>"""
